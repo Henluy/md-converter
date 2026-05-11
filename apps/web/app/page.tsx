@@ -1,8 +1,8 @@
-import { BookOpen, FileText, Sparkles } from 'lucide-react';
+import { BookOpen, Sparkles } from 'lucide-react';
 
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { UploadPanel } from '@/components/upload/upload-panel';
 
 export default function HomePage() {
   return (
@@ -25,33 +25,24 @@ export default function HomePage() {
         <ThemeToggle />
       </header>
 
-      <section className="flex flex-1 flex-col justify-center py-16">
-        <Badge variant="accent" className="mb-6 self-start">
+      <section className="py-10">
+        <Badge variant="accent" className="mb-5 self-start">
           <Sparkles className="h-3 w-3" />
           MVP en cours — Phase 1
         </Badge>
-        <h1 className="font-display text-5xl leading-[1.05] tracking-tight md:text-6xl">
+        <h1 className="font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
           Une bibliothèque silencieuse,
           <br />
           taillée pour le Markdown.
         </h1>
-        <p className="mt-6 max-w-2xl text-base leading-relaxed text-[var(--muted-foreground)] md:text-lg">
+        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[var(--muted-foreground)] md:text-base">
           Conversion locale d’EPUB et de PDF en Markdown propre, sans dépendance
-          cloud, sans coût d’API. Le backend tourne déjà ; l’interface arrive
-          ticket par ticket.
+          cloud, sans coût d’API.
         </p>
-        <div className="mt-10 flex flex-wrap gap-3">
-          <Button size="lg" disabled aria-disabled>
-            <FileText className="h-4 w-4" />
-            Glisser un livre (bientôt)
-          </Button>
-          <a
-            href="/BRIEF.md"
-            className="inline-flex h-11 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] px-5 text-base font-medium transition-colors hover:bg-[var(--muted)]"
-          >
-            Voir le BRIEF
-          </a>
-        </div>
+      </section>
+
+      <section className="space-y-6 pb-16">
+        <UploadPanel />
       </section>
 
       <section className="grid gap-4 border-t border-[var(--border)] pt-10 md:grid-cols-3">

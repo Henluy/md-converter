@@ -16,7 +16,7 @@ from slowapi.util import get_remote_address
 from app import __version__
 from app.config import get_settings
 from app.db import dispose_engine
-from app.routes import health_router
+from app.routes import health_router, jobs_router
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(health_router)
+    app.include_router(jobs_router, prefix="/api")
 
     return app
 
