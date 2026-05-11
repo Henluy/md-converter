@@ -93,3 +93,113 @@
     font-feature-settings: 'liga', 'kern';
   }
 }
+
+/* ------------------------------------------------------------------
+   Markdown preview — éditorial typo (BRIEF §11.3.3)
+   Serif body, generous spacing, ink-on-paper feel.
+------------------------------------------------------------------ */
+.prose-editorial {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  color: var(--foreground);
+  max-width: 72ch;
+  margin-inline: auto;
+}
+
+.prose-editorial > * + * {
+  margin-top: 1.1em;
+}
+
+.prose-editorial h1,
+.prose-editorial h2,
+.prose-editorial h3,
+.prose-editorial h4 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  margin-top: 1.8em;
+  margin-bottom: 0.6em;
+}
+
+.prose-editorial h1 { font-size: 2.1rem; }
+.prose-editorial h2 { font-size: 1.65rem; }
+.prose-editorial h3 { font-size: 1.3rem; }
+.prose-editorial h4 { font-size: 1.1rem; }
+
+.prose-editorial p {
+  margin: 0;
+}
+
+.prose-editorial a {
+  color: var(--accent);
+  text-decoration-color: color-mix(in oklch, var(--accent) 35%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.prose-editorial strong { font-weight: 600; }
+.prose-editorial em { font-style: italic; }
+
+.prose-editorial ul,
+.prose-editorial ol {
+  padding-inline-start: 1.4em;
+}
+.prose-editorial ul { list-style: disc; }
+.prose-editorial ol { list-style: decimal; }
+.prose-editorial li + li { margin-top: 0.35em; }
+
+.prose-editorial blockquote {
+  border-inline-start: 2px solid var(--accent);
+  padding-inline-start: 1em;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.prose-editorial hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin-block: 2em;
+}
+
+.prose-editorial code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--muted);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+}
+
+.prose-editorial pre {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1em 1.2em;
+  overflow-x: auto;
+}
+
+.prose-editorial table {
+  width: 100%;
+  font-size: 0.95em;
+  border-collapse: collapse;
+}
+.prose-editorial th,
+.prose-editorial td {
+  border: 1px solid var(--border);
+  padding: 0.5em 0.8em;
+  text-align: left;
+}
+.prose-editorial th {
+  background: var(--muted);
+  font-weight: 600;
+}
+
+.prose-editorial img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+}

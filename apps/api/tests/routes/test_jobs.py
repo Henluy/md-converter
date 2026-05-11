@@ -134,8 +134,10 @@ async def test_list_jobs_returns_recent_first(
     assert len(payload) >= 2
 
     # Newest first: created_at desc.
+    from itertools import pairwise
+
     created_ats = [item["created_at"] for item in payload]
-    assert all(a >= b for a, b in zip(created_ats, created_ats[1:], strict=False))
+    assert all(a >= b for a, b in pairwise(created_ats))
 
 
 @pytest.mark.usefixtures("db_session_sync")

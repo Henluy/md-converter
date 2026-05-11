@@ -87,4 +87,18 @@ export const api = {
     );
     return unwrap<JobRead[]>(response);
   },
+
+  async getFileContent(fileId: string): Promise<string> {
+    const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/content`);
+    if (response.ok) return response.text();
+    let detail = response.statusText;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // body wasn't JSON
+    }
+    const err: ApiError = { status: response.status, detail };
+    throw err;
+  },
 };
