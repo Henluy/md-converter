@@ -17,6 +17,7 @@ node_modules/
 out/
 *.log
 .turbo/
+*.tsbuildinfo
 
 # Python
 __pycache__/
