@@ -1,0 +1,111 @@
+# docker-compose.yml — md-converter local dev stack
+#
+# Postgres reste hors-container (déjà installé sur la machine hôte, port 5432).
+# Services containerisés : redis, api, worker, web.
+#
+# Les services `api`, `worker`, `web` restent commentés tant que leurs
+# Dockerfiles n'existent pas (tickets 4, 6, 11 du plan d'attaque).
+# Redis est utilisable dès maintenant : `docker compose up redis`.
+
+name: md-converter
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: md-converter-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    user: "999:999"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  # --- api ------------------------------------------------------------------
+  # Décommenter une fois apps/api/Dockerfile créé (ticket 4).
+  #
+  # api:
+  #   build:
+  #     context: ./apps/api
+  #     dockerfile: Dockerfile
+  #   container_name: md-converter-api
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   environment:
+  #     - DATABASE_URL=${DATABASE_URL}
+  #     - REDIS_URL=${REDIS_URL}
+  #     - DATA_DIR=/data
+  #   ports:
+  #     - "${API_PORT:-8000}:8000"
+  #   volumes:
+  #     - ./data:/data
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+  #     interval: 15s
+  #     timeout: 5s
+  #     retries: 5
+
+  # --- worker (Celery) ------------------------------------------------------
+  # Décommenter une fois apps/api/Dockerfile créé (ticket 6).
+  #
+  # worker:
+  #   build:
+  #     context: ./apps/api
+  #     dockerfile: Dockerfile
+  #   container_name: md-converter-worker
+  #   restart: unless-stopped
+  #   command: ["celery", "-A", "app.tasks.celery_tasks", "worker", "--loglevel=info", "--concurrency=2"]
+  #   env_file: .env
+  #   environment:
+  #     - DATABASE_URL=${DATABASE_URL}
+  #     - REDIS_URL=${REDIS_URL}
+  #     - DATA_DIR=/data
+  #   volumes:
+  #     - ./data:/data
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   security_opt:
+  #     - no-new-privileges:true
+
+  # --- web (Next.js) --------------------------------------------------------
+  # Décommenter une fois apps/web/Dockerfile créé (ticket 11).
+  #
+  # web:
+  #   build:
+  #     context: ./apps/web
+  #     dockerfile: Dockerfile
+  #   container_name: md-converter-web
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+  #   ports:
+  #     - "${WEB_PORT:-3000}:3000"
+  #   depends_on:
+  #     - api
+  #   security_opt:
+  #     - no-new-privileges:true
+
+volumes:
+  redis_data:
+    name: md-converter-redis-data

@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Détecte ce qui a changé pour ne pas tout faire tourner pour rien.
+  # -------------------------------------------------------------------------
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      api: ${{ steps.filter.outputs.api }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+            api:
+              - 'apps/api/**'
+              - 'pyproject.toml'
+              - 'poetry.lock'
+            workflows:
+              - '.github/workflows/**'
+
+  # -------------------------------------------------------------------------
+  # Lint global du repo (yaml, markdown, secrets) — toujours actif.
+  # -------------------------------------------------------------------------
+  repo-lint:
+    name: Repo lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check .env is not committed
+        run: |
+          if git ls-files | grep -E '^\.env$|^\.env\.local$|^\.env\.[^.]+\.local$' ; then
+            echo "❌ Un fichier .env est tracké."
+            exit 1
+          fi
+
+      - name: Validate docker-compose.yml
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Check secrets with gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  # -------------------------------------------------------------------------
+  # Web (Next.js) — actif quand apps/web/package.json existe.
+  # -------------------------------------------------------------------------
+  web:
+    name: Web (Next.js)
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if no package.json yet
+        id: check
+        run: |
+          if [ -f package.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::apps/web/package.json absent — étape ignorée."
+          fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.check.outputs.exists == 'true'
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.exists == 'true'
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+
+      - name: Install
+        if: steps.check.outputs.exists == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        if: steps.check.outputs.exists == 'true'
+        run: pnpm lint
+
+      - name: Type-check
+        if: steps.check.outputs.exists == 'true'
+        run: pnpm type-check
+
+      - name: Test
+        if: steps.check.outputs.exists == 'true'
+        run: pnpm test --run
+
+      - name: Audit
+        if: steps.check.outputs.exists == 'true'
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+  # -------------------------------------------------------------------------
+  # API (FastAPI) — actif quand apps/api/pyproject.toml existe.
+  # -------------------------------------------------------------------------
+  api:
+    name: API (FastAPI)
+    needs: changes
+    if: ${{ needs.changes.outputs.api == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if no pyproject.toml yet
+        id: check
+        run: |
+          if [ -f pyproject.toml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::apps/api/pyproject.toml absent — étape ignorée."
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.check.outputs.exists == 'true'
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install poetry
+        if: steps.check.outputs.exists == 'true'
+        run: pipx install poetry
+
+      - name: Install deps
+        if: steps.check.outputs.exists == 'true'
+        run: poetry install --no-interaction --no-root
+
+      - name: Lint (ruff)
+        if: steps.check.outputs.exists == 'true'
+        run: poetry run ruff check .
+
+      - name: Test (pytest)
+        if: steps.check.outputs.exists == 'true'
+        run: poetry run pytest
+
+      - name: Audit (pip-audit)
+        if: steps.check.outputs.exists == 'true'
+        run: poetry run pip-audit
+        continue-on-error: true
+
+  # -------------------------------------------------------------------------
+  # Statut agrégé — utile pour la branch protection rule.
+  # -------------------------------------------------------------------------
+  ci-success:
+    name: CI success
+    needs: [repo-lint, web, api]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate result
+        run: |
+          if [[ "${{ needs.repo-lint.result }}" == "failure" ]] \
+              || [[ "${{ needs.web.result }}" == "failure" ]] \
+              || [[ "${{ needs.api.result }}" == "failure" ]]; then
+            echo "❌ Un job CI a échoué."
+            exit 1
+          fi
+          echo "✔ CI green."
