@@ -1,136 +1,141 @@
-"""Celery task tests in eager mode (no broker, synchronous execution).
+"""Celery task tests in eager mode against a real local Postgres.
 
-Shared fixtures (``epub_file``, ``output_dir``, ``skip_if_no_pandoc``)
-come from the root ``tests/conftest.py``. The task now routes via
-``validate_upload → ConverterRouter`` before invoking the converter.
+Skips automatically when DATABASE_URL still points to the test placeholder
+(see :func:`_has_database` in the root conftest).
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+from uuid import uuid4
 
 import pytest
 
-from app.converters import FormatNotSupportedError
-from app.security import (
-    FileValidationError,
-    MimeTypeMismatchError,
-    UnsupportedExtensionError,
-)
+from app.config import get_settings
+from app.models.db import JobStatus
+from app.security import MimeTypeMismatchError
+from app.services import NewFileSpec, create_job, get_file, get_job
 from app.tasks import convert_file_task
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+
+def _stage(spec_dir: Path, source: Path) -> tuple[Path, str]:
+    """Copy ``source`` into ``spec_dir/input/{uuid}{suffix}`` and return paths."""
+    stem = source.stem
+    stored = f"{uuid4().hex}_{stem}{source.suffix}"
+    inp = spec_dir / "input"
+    inp.mkdir(parents=True, exist_ok=True)
+    target = inp / stored
+    target.write_bytes(source.read_bytes())
+    relative = f"input/{stored}"
+    return target, relative
+
+
+@pytest.fixture
+def override_data_dir(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> Path:
+    """Point settings.data_dir at tmp_path (clears the lru_cache)."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    yield tmp_path
+    get_settings.cache_clear()
 
 
 @pytest.mark.usefixtures("skip_if_no_pandoc")
-def test_task_routes_epub_to_pandoc_and_returns_payload(
+def test_task_full_pipeline_epub(
+    db_session_sync: Session,
+    override_data_dir: Path,
     epub_file: Path,
-    output_dir: Path,
 ) -> None:
-    """Eager mode → task executes synchronously in-process."""
-    async_result = convert_file_task.apply(
-        kwargs={
-            "input_path": str(epub_file),
-            "output_dir": str(output_dir),
-        }
-    )
+    """End-to-end: create job → dispatch task → file_row + job updated."""
+    staged, relative = _stage(override_data_dir, epub_file)
 
-    assert async_result.successful()
-    payload = async_result.result
+    job = create_job(
+        db_session_sync,
+        [
+            NewFileSpec(
+                original_filename=epub_file.name,
+                stored_filename=staged.name,
+                original_format=".epub",
+                storage_path=relative,
+                size_bytes=staged.stat().st_size,
+            )
+        ],
+    )
+    db_session_sync.commit()
+    file_id = job.files[0].id
+
+    result = convert_file_task.apply(kwargs={"file_id": str(file_id)})
+    assert result.successful()
+    payload = result.result
 
     assert payload["converter"] == "pandoc"
     assert payload["target_format"] == "epub"
-    assert payload["detected_mime"] in {"application/epub+zip", "application/zip"}
-    assert payload["size_bytes"] > 0
+    assert payload["file_id"] == str(file_id)
+    assert payload["job_id"] == str(job.id)
 
-    output_path = Path(payload["output_path"])
-    assert output_path.exists()
-    assert "Chapter One" in output_path.read_text(encoding="utf-8")
+    # Reload via a fresh session (task committed in its own txn).
+    db_session_sync.expire_all()
+    refreshed = get_job(db_session_sync, job.id)
+    assert refreshed is not None
+    assert refreshed.status == JobStatus.done.value
+    assert refreshed.processed_files == 1
+    assert refreshed.completed_at is not None
+
+    file_after = get_file(db_session_sync, file_id)
+    assert file_after is not None
+    assert file_after.converter_used == "pandoc"
+    assert file_after.output_path is not None
+    assert file_after.output_path.startswith(f"output/{job.id}")
 
 
-def test_unknown_override_raises_format_not_supported(
-    tmp_path: Path,
-    epub_file: Path,
+def test_task_unknown_file_id_raises(
+    db_session_sync: Session,
+    override_data_dir: Path,
 ) -> None:
-    """An unknown converter override surfaces as FormatNotSupportedError."""
-    with pytest.raises(FormatNotSupportedError):
-        convert_file_task.apply(
-            kwargs={
-                "input_path": str(epub_file),
-                "output_dir": str(tmp_path / "out"),
-                "override": "ghostwriter",
-            }
-        )
+    del db_session_sync, override_data_dir  # only needed to enforce DB + env setup
+    bogus = uuid4()
+    with pytest.raises(LookupError):
+        convert_file_task.apply(kwargs={"file_id": str(bogus)})
 
 
-def test_disallowed_extension_is_rejected(tmp_path: Path) -> None:
-    """Validation runs before routing — unsupported extension → UnsupportedExtensionError."""
-    weird = tmp_path / "doc.xyz"
-    weird.write_bytes(b"hello")
-    with pytest.raises(UnsupportedExtensionError):
-        convert_file_task.apply(
-            kwargs={
-                "input_path": str(weird),
-                "output_dir": str(tmp_path / "out"),
-            }
-        )
+def test_task_failed_file_marks_job_failed(
+    db_session_sync: Session,
+    override_data_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """An unsupported file → task fails AND job row records failure."""
+    # Spoofed extension (plain text claiming to be a PDF)
+    rogue = tmp_path / "trash.pdf"
+    rogue.write_bytes(b"definitely not a real pdf")
+    staged, relative = _stage(override_data_dir, rogue)
 
+    job = create_job(
+        db_session_sync,
+        [
+            NewFileSpec(
+                original_filename=rogue.name,
+                stored_filename=staged.name,
+                original_format=".pdf",
+                storage_path=relative,
+                size_bytes=staged.stat().st_size,
+            )
+        ],
+    )
+    db_session_sync.commit()
+    file_id = job.files[0].id
 
-def test_spoofed_extension_is_rejected(tmp_path: Path) -> None:
-    """Plain text saved with .pdf extension → MimeTypeMismatchError."""
-    spoof = tmp_path / "fake.pdf"
-    spoof.write_bytes(b"not a real pdf, just text")
     with pytest.raises(MimeTypeMismatchError):
-        convert_file_task.apply(
-            kwargs={
-                "input_path": str(spoof),
-                "output_dir": str(tmp_path / "out"),
-            }
-        )
+        convert_file_task.apply(kwargs={"file_id": str(file_id)})
 
-
-def test_native_pdf_routes_to_pymupdf(text_pdf: Path, output_dir: Path) -> None:
-    """Native PDF should now be routed to PymuPdfConverter and succeed."""
-    result = convert_file_task.apply(
-        kwargs={
-            "input_path": str(text_pdf),
-            "output_dir": str(output_dir),
-        }
-    )
-    payload = result.result
-    assert payload["converter"] == "pymupdf"
-    assert payload["target_format"] == "pdf_native"
-    assert Path(payload["output_path"]).exists()
-
-
-def test_scanned_pdf_targets_marker_which_is_missing(scanned_pdf: Path) -> None:
-    """Scanned PDFs target marker; ticket 8b will register it."""
-    with pytest.raises(FormatNotSupportedError) as excinfo:
-        convert_file_task.apply(
-            kwargs={
-                "input_path": str(scanned_pdf),
-                "output_dir": str(scanned_pdf.parent / "out"),
-            }
-        )
-    assert "marker" in str(excinfo.value)
-
-
-def test_docx_routes_to_markitdown(docx_file: Path, output_dir: Path) -> None:
-    result = convert_file_task.apply(
-        kwargs={
-            "input_path": str(docx_file),
-            "output_dir": str(output_dir),
-        }
-    )
-    payload = result.result
-    assert payload["converter"] == "markitdown"
-    assert payload["target_format"] == "docx"
-
-
-def test_missing_input_raises_validation_error(tmp_path: Path) -> None:
-    """A non-existent file is caught by validation, not by the converter."""
-    with pytest.raises(FileValidationError):
-        convert_file_task.apply(
-            kwargs={
-                "input_path": str(tmp_path / "missing.epub"),
-                "output_dir": str(tmp_path / "out"),
-            }
-        )
+    db_session_sync.expire_all()
+    refreshed = get_job(db_session_sync, job.id)
+    assert refreshed is not None
+    assert refreshed.status == JobStatus.failed.value
+    assert refreshed.error_message is not None
+    assert "MimeTypeMismatch" in refreshed.error_message

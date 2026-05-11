@@ -93,6 +93,25 @@ class Settings(BaseSettings):
             return self.database_url.replace(
                 "postgresql://", "postgresql+asyncpg://", 1
             )
+        if self.database_url.startswith("postgresql+psycopg://"):
+            return self.database_url.replace(
+                "postgresql+psycopg://", "postgresql+asyncpg://", 1
+            )
+        return self.database_url
+
+    @property
+    def sync_database_url(self) -> str:
+        """SQLAlchemy URL using the psycopg (3.x) sync driver — used by the worker."""
+        if self.database_url.startswith("postgresql+psycopg://"):
+            return self.database_url
+        if self.database_url.startswith("postgresql://"):
+            return self.database_url.replace(
+                "postgresql://", "postgresql+psycopg://", 1
+            )
+        if self.database_url.startswith("postgresql+asyncpg://"):
+            return self.database_url.replace(
+                "postgresql+asyncpg://", "postgresql+psycopg://", 1
+            )
         return self.database_url
 
 

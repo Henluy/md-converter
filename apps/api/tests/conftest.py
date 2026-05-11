@@ -177,6 +177,64 @@ def skip_if_no_pandoc(pandoc_available: bool) -> None:
 
 
 # --------------------------------------------------------------------------
+# Database integration fixtures
+# --------------------------------------------------------------------------
+
+
+def _has_database() -> bool:
+    """Try connecting to the configured sync DB; skip integration if not."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.config import get_settings
+    from app.db_sync import build_sync_engine
+
+    settings = get_settings()
+    # Tests skip when DATABASE_URL still points to the test placeholder
+    # seeded at the top of this conftest.
+    if "test:test@localhost" in settings.database_url:
+        return False
+    try:
+        engine = build_sync_engine()
+        with engine.connect() as conn:
+            from sqlalchemy import text
+
+            conn.execute(text("select 1"))
+        engine.dispose()
+    except SQLAlchemyError:
+        return False
+    return True
+
+
+@pytest.fixture
+def db_session_sync() -> Iterator[object]:
+    """Yields a session against the real local Postgres, truncates after."""
+    if not _has_database():
+        pytest.skip(
+            "DATABASE_URL not set to a reachable Postgres — integration test skipped"
+        )
+
+    from sqlalchemy import text
+
+    from app.db_sync import sync_session_scope
+
+    try:
+        with sync_session_scope() as session:
+            yield session
+    finally:
+        # Final cleanup outside the yielded session
+        with sync_session_scope() as cleanup:
+            cleanup.execute(text("truncate jobs restart identity cascade"))
+
+
+@pytest.fixture
+def fixtures_dir(tmp_path: Path) -> Path:
+    """Per-test data dir that mimics ``settings.data_dir`` layout."""
+    (tmp_path / "input").mkdir()
+    (tmp_path / "output").mkdir()
+    return tmp_path
+
+
+# --------------------------------------------------------------------------
 # PDF / DOCX / HTML / TXT generators — used by ticket-8a converter tests.
 # --------------------------------------------------------------------------
 
