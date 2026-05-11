@@ -1,0 +1,40 @@
+# --- VCS & editors --------------------------------------------------------
+.git
+.gitignore
+.idea
+.vscode
+*.swp
+*.swo
+
+# --- Python caches --------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+*.egg-info/
+
+# --- Tests / dev-only -----------------------------------------------------
+tests/
+.coverage
+htmlcov/
+coverage/
+
+# --- Build artefacts ------------------------------------------------------
+dist/
+build/
+
+# --- Secrets --------------------------------------------------------------
+.env
+.env.local
+*.pem
+*.key
+
+# --- Docs / meta ----------------------------------------------------------
+README.md
+*.md
+Dockerfile
+.dockerignore

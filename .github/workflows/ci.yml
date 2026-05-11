@@ -36,8 +36,6 @@ jobs:
               - 'pnpm-lock.yaml'
             api:
               - 'apps/api/**'
-              - 'pyproject.toml'
-              - 'poetry.lock'
             workflows:
               - '.github/workflows/**'
 
@@ -137,41 +135,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Skip if no pyproject.toml yet
-        id: check
-        run: |
-          if [ -f pyproject.toml ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::apps/api/pyproject.toml absent — étape ignorée."
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.check.outputs.exists == 'true'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: '3.11'
-          cache: 'pip'
+          version: "0.5.x"
+          enable-cache: true
+          cache-dependency-glob: 'apps/api/uv.lock'
 
-      - name: Install poetry
-        if: steps.check.outputs.exists == 'true'
-        run: pipx install poetry
+      - name: Set up Python
+        run: uv python install 3.11
 
       - name: Install deps
-        if: steps.check.outputs.exists == 'true'
-        run: poetry install --no-interaction --no-root
+        run: uv sync --frozen --all-extras
 
       - name: Lint (ruff)
-        if: steps.check.outputs.exists == 'true'
-        run: poetry run ruff check .
+        run: uv run ruff check .
+
+      - name: Type-check (mypy)
+        run: uv run mypy app
 
       - name: Test (pytest)
-        if: steps.check.outputs.exists == 'true'
-        run: poetry run pytest
+        run: uv run pytest
 
       - name: Audit (pip-audit)
-        if: steps.check.outputs.exists == 'true'
-        run: poetry run pip-audit
+        run: uv run pip-audit
         continue-on-error: true
 
   # -------------------------------------------------------------------------

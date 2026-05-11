@@ -1,0 +1,104 @@
+[project]
+name = "md-converter-api"
+version = "0.0.0"
+description = "FastAPI backend for md-converter (EPUB/PDF → Markdown)."
+requires-python = ">=3.11,<3.13"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Henluy Soro", email = "sorohenluy@gmail.com" }]
+
+dependencies = [
+  "fastapi>=0.115.6",
+  "uvicorn[standard]>=0.34.0",
+  "pydantic>=2.10.4",
+  "pydantic-settings>=2.7.0",
+  "sqlalchemy[asyncio]>=2.0.36",
+  "asyncpg>=0.30.0",
+  "python-multipart>=0.0.20",
+  "slowapi>=0.1.9",
+  "structlog>=24.4.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.4",
+  "pytest-asyncio>=0.25.0",
+  "pytest-cov>=6.0.0",
+  "httpx>=0.28.1",
+  "ruff>=0.8.4",
+  "mypy>=1.13.0",
+  "pip-audit>=2.7.3",
+]
+
+[tool.uv]
+package = false
+
+# --------------------------------------------------------------------------
+# Ruff (lint + format)
+# --------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["data", ".venv"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # isort
+  "B",    # flake8-bugbear
+  "C4",   # flake8-comprehensions
+  "UP",   # pyupgrade
+  "N",    # pep8-naming
+  "S",    # flake8-bandit (security)
+  "RUF",  # ruff-specific
+  "SIM",  # flake8-simplify
+  "PTH",  # flake8-use-pathlib
+  "TID",  # flake8-tidy-imports
+]
+ignore = [
+  "E501",  # line too long (formatter handles it)
+  "S101",  # use of assert (fine in tests)
+  # TC rules are disabled: Pydantic and SQLAlchemy require runtime
+  # access to annotations, so we keep regular imports.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S106"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# --------------------------------------------------------------------------
+# Pytest
+# --------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+  "-ra",
+  "--strict-markers",
+  "--strict-config",
+]
+filterwarnings = [
+  "error",
+  "ignore::DeprecationWarning:asyncio.*",
+]
+
+# --------------------------------------------------------------------------
+# Mypy
+# --------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+exclude = ["tests/"]
+
+[[tool.mypy.overrides]]
+module = ["slowapi.*"]
+ignore_missing_imports = true

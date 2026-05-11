@@ -8,7 +8,7 @@ SHELL := /bin/bash
 DC ?= docker compose
 PNPM ?= pnpm
 PY ?= python3
-POETRY ?= poetry
+UV ?= uv
 PSQL ?= psql
 
 DB_NAME ?= md-converter_db
@@ -104,7 +104,7 @@ test-web: ## Tests TypeScript (vitest/playwright)
 
 .PHONY: test-api
 test-api: ## Tests Python (pytest)
-	cd apps/api && $(POETRY) run pytest
+	cd apps/api && $(UV) run pytest
 
 .PHONY: lint
 lint: lint-web lint-api ## Lint l'ensemble du monorepo
@@ -114,22 +114,31 @@ lint-web: ## Lint + type-check Next.js
 	cd apps/web && $(PNPM) lint && $(PNPM) type-check
 
 .PHONY: lint-api
-lint-api: ## Lint Python (ruff)
-	cd apps/api && $(POETRY) run ruff check .
+lint-api: ## Lint Python (ruff) + type-check (mypy)
+	cd apps/api && $(UV) run ruff check .
+	cd apps/api && $(UV) run mypy app
 
 .PHONY: format
-format: ## Formate le code (prettier + black)
+format: ## Formate le code (prettier + ruff)
 	cd apps/web && $(PNPM) format
-	cd apps/api && $(POETRY) run black .
+	cd apps/api && $(UV) run ruff format .
+
+.PHONY: api-dev
+api-dev: ## Démarre l'API en mode reload hors-docker
+	cd apps/api && $(UV) run uvicorn app.main:app --reload --port 8000
+
+.PHONY: api-sync
+api-sync: ## uv sync (installe / met à jour les deps Python)
+	cd apps/api && $(UV) sync
 
 # ---------------------------------------------------------------------------
 # Sécurité
 # ---------------------------------------------------------------------------
 
 .PHONY: audit
-audit: ## Audit des dépendances (pnpm + pip)
+audit: ## Audit des dépendances (pnpm + pip-audit)
 	cd apps/web && $(PNPM) audit --audit-level=moderate || true
-	cd apps/api && $(POETRY) run pip-audit || true
+	cd apps/api && $(UV) run pip-audit || true
 
 # ---------------------------------------------------------------------------
 # Nettoyage
