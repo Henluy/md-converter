@@ -1,0 +1,27 @@
+{
+  "name": "@md/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Next.js frontend + Drizzle ORM for md-converter (DB layer first, UI lands at ticket 11).",
+  "type": "module",
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:check": "drizzle-kit check",
+    "lint": "echo 'lint: noop until ticket 11 lands ESLint' && exit 0",
+    "type-check": "tsc --noEmit",
+    "test": "echo 'test: noop until ticket 11' && exit 0",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.4",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.10",
+    "drizzle-kit": "^0.30.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

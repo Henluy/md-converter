@@ -1,0 +1,16 @@
+{
+  "name": "md-converter",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local EPUB/PDF to Markdown converter (monorepo root).",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "db:generate": "pnpm --filter @md/web db:generate",
+    "db:migrate": "pnpm --filter @md/web db:migrate",
+    "db:studio": "pnpm --filter @md/web db:studio"
+  }
+}
