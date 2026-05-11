@@ -19,8 +19,6 @@ from app.security import (
 )
 from app.tasks import convert_file_task
 
-_PDF_BYTES = b"%PDF-1.7\n1 0 obj <<>> endobj\n%%EOF\n"
-
 
 @pytest.mark.usefixtures("skip_if_no_pandoc")
 def test_task_routes_epub_to_pandoc_and_returns_payload(
@@ -89,17 +87,42 @@ def test_spoofed_extension_is_rejected(tmp_path: Path) -> None:
         )
 
 
-def test_native_pdf_has_no_converter_yet(tmp_path: Path) -> None:
-    """Ticket 7 routes PDFs to pymupdf; ticket 8 will register it."""
-    pdf = tmp_path / "doc.pdf"
-    pdf.write_bytes(_PDF_BYTES)
-    with pytest.raises(FormatNotSupportedError):
+def test_native_pdf_routes_to_pymupdf(text_pdf: Path, output_dir: Path) -> None:
+    """Native PDF should now be routed to PymuPdfConverter and succeed."""
+    result = convert_file_task.apply(
+        kwargs={
+            "input_path": str(text_pdf),
+            "output_dir": str(output_dir),
+        }
+    )
+    payload = result.result
+    assert payload["converter"] == "pymupdf"
+    assert payload["target_format"] == "pdf_native"
+    assert Path(payload["output_path"]).exists()
+
+
+def test_scanned_pdf_targets_marker_which_is_missing(scanned_pdf: Path) -> None:
+    """Scanned PDFs target marker; ticket 8b will register it."""
+    with pytest.raises(FormatNotSupportedError) as excinfo:
         convert_file_task.apply(
             kwargs={
-                "input_path": str(pdf),
-                "output_dir": str(tmp_path / "out"),
+                "input_path": str(scanned_pdf),
+                "output_dir": str(scanned_pdf.parent / "out"),
             }
         )
+    assert "marker" in str(excinfo.value)
+
+
+def test_docx_routes_to_markitdown(docx_file: Path, output_dir: Path) -> None:
+    result = convert_file_task.apply(
+        kwargs={
+            "input_path": str(docx_file),
+            "output_dir": str(output_dir),
+        }
+    )
+    payload = result.result
+    assert payload["converter"] == "markitdown"
+    assert payload["target_format"] == "docx"
 
 
 def test_missing_input_raises_validation_error(tmp_path: Path) -> None:

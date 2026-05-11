@@ -15,6 +15,38 @@ from pathlib import Path
 
 import pytest
 
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Preload native C extensions before any test module is collected.
+
+    Importing pymupdf after numpy/onnxruntime (pulled in transitively by
+    markitdown during earlier tests) segfaults on macOS aarch64.
+    Forcing pymupdf to load first sidesteps the issue.
+    """
+    del config
+    try:
+        import pymupdf  # noqa: F401
+        import pymupdf4llm  # noqa: F401
+    except ImportError:
+        pass
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Skip Python's normal shutdown to dodge a pymupdf finaliser SIGSEGV.
+
+    PyMuPDF's atexit/finalisation crashes on macOS aarch64 (Python 3.11+).
+    The crash happens AFTER the test summary is printed and AFTER all
+    fixtures tore down, so we can safely short-circuit via ``os._exit`` to
+    surface the real test exit status to CI.
+    """
+    del session
+    import os
+    import sys
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(exitstatus)
+
 # Seed env BEFORE the app modules import settings.
 os.environ.setdefault(
     "DATABASE_URL",
@@ -23,7 +55,7 @@ os.environ.setdefault(
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -142,3 +174,85 @@ def pandoc_available() -> bool:
 def skip_if_no_pandoc(pandoc_available: bool) -> None:
     if not pandoc_available:
         pytest.skip("pandoc binary not available on this host")
+
+
+# --------------------------------------------------------------------------
+# PDF / DOCX / HTML / TXT generators — used by ticket-8a converter tests.
+# --------------------------------------------------------------------------
+
+
+def build_text_pdf(path: Path, *, lines: int = 40) -> Path:
+    """Build a text-native PDF with enough characters to clear the inspector.
+
+    We write multiple lines so the char/pixel ratio comfortably exceeds the
+    default threshold (1e-4) and the heuristic classifies the page as native.
+    The first line is "Hello md-converter" so converter assertions still pass.
+    """
+    import pymupdf
+
+    body_line = "The quick brown fox jumps over the lazy dog. " * 3
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((72, 72), "Hello md-converter", fontsize=14)
+        for i in range(lines):
+            page.insert_text((72, 110 + i * 14), body_line, fontsize=11)
+        doc.save(str(path))
+    return path
+
+
+def build_scanned_pdf(path: Path) -> Path:
+    """Build a PDF that contains only an image — the 'scanned' baseline.
+
+    We rasterise a single image-only page so text extraction returns nothing
+    and the inspector falls below the char/pixel threshold.
+    """
+    import pymupdf
+
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        # Solid grey rectangle stands in for a scan; no text glyphs at all.
+        page.draw_rect(page.rect, color=(0.8, 0.8, 0.8), fill=(0.8, 0.8, 0.8))
+        doc.save(str(path))
+    return path
+
+
+def build_docx(path: Path, *, text: str = "Hello from docx") -> Path:
+    """Build a fully-formed .docx using python-docx so markitdown accepts it."""
+    import docx  # python-docx, declared in [dependency-groups].dev
+
+    document = docx.Document()
+    document.add_paragraph(text)
+    document.save(str(path))
+    return path
+
+
+@pytest.fixture
+def text_pdf(tmp_path: Path) -> Path:
+    return build_text_pdf(tmp_path / "text.pdf")
+
+
+@pytest.fixture
+def scanned_pdf(tmp_path: Path) -> Path:
+    return build_scanned_pdf(tmp_path / "scan.pdf")
+
+
+@pytest.fixture
+def docx_file(tmp_path: Path) -> Path:
+    return build_docx(tmp_path / "doc.docx")
+
+
+@pytest.fixture
+def html_file(tmp_path: Path) -> Path:
+    path = tmp_path / "page.html"
+    path.write_text(
+        "<!doctype html><html><body><h1>Hello</h1><p>From <em>md-converter</em>.</p></body></html>",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
+def txt_file(tmp_path: Path) -> Path:
+    path = tmp_path / "note.txt"
+    path.write_text("Hello from a plain text file.\n", encoding="utf-8")
+    return path

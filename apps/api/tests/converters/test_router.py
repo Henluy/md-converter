@@ -9,13 +9,13 @@ import pytest
 from app.converters import (
     ConverterRouter,
     FormatNotSupportedError,
+    MarkItDownConverter,
     PandocConverter,
+    PymuPdfConverter,
     TargetFormat,
     build_default_registry,
 )
 from app.security import UnsupportedExtensionError
-
-_PDF_BYTES = b"%PDF-1.7\n1 0 obj <<>> endobj\n%%EOF\n"
 
 
 def _make(path: Path, content: bytes) -> Path:
@@ -32,15 +32,48 @@ def test_router_routes_epub_to_pandoc(epub_file: Path) -> None:
     assert isinstance(decision.converter, PandocConverter)
 
 
-def test_router_text_native_pdf_target_but_no_converter(tmp_path: Path) -> None:
-    """Today only pandoc is registered → PDF target raises FormatNotSupportedError."""
-    pdf = _make(tmp_path / "doc.pdf", _PDF_BYTES)
+def test_router_routes_text_pdf_to_pymupdf(text_pdf: Path) -> None:
+    router = ConverterRouter(build_default_registry())
+    decision = router.resolve(text_pdf)
+
+    assert decision.target_format == TargetFormat.pdf_native
+    assert decision.converter_name == "pymupdf"
+    assert isinstance(decision.converter, PymuPdfConverter)
+
+
+def test_router_routes_scanned_pdf_to_marker_target(scanned_pdf: Path) -> None:
+    """Scanned PDFs target ``marker``; ticket 8b registers it."""
     router = ConverterRouter(build_default_registry())
 
     with pytest.raises(FormatNotSupportedError) as excinfo:
-        router.resolve(pdf)
+        router.resolve(scanned_pdf)
 
-    assert "pymupdf" in str(excinfo.value)
+    assert "marker" in str(excinfo.value)
+
+
+def test_router_routes_docx_to_markitdown(docx_file: Path) -> None:
+    router = ConverterRouter(build_default_registry())
+    decision = router.resolve(docx_file)
+
+    assert decision.target_format == TargetFormat.docx
+    assert decision.converter_name == "markitdown"
+    assert isinstance(decision.converter, MarkItDownConverter)
+
+
+def test_router_routes_html_to_markitdown(html_file: Path) -> None:
+    router = ConverterRouter(build_default_registry())
+    decision = router.resolve(html_file)
+
+    assert decision.target_format == TargetFormat.html
+    assert decision.converter_name == "markitdown"
+
+
+def test_router_routes_txt_to_markitdown(txt_file: Path) -> None:
+    router = ConverterRouter(build_default_registry())
+    decision = router.resolve(txt_file)
+
+    assert decision.target_format == TargetFormat.txt
+    assert decision.converter_name == "markitdown"
 
 
 def test_router_override_with_unsupported_converter_raises(epub_file: Path) -> None:
@@ -63,4 +96,4 @@ def test_router_rejects_unknown_extension(tmp_path: Path) -> None:
 
 def test_router_exposes_available_converters() -> None:
     router = ConverterRouter(build_default_registry())
-    assert router.available_converters == ["pandoc"]
+    assert router.available_converters == ["markitdown", "pandoc", "pymupdf"]

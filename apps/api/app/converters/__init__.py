@@ -10,7 +10,9 @@ from app.converters.errors import (
     ConverterUnavailableError,
     FormatNotSupportedError,
 )
+from app.converters.markitdown import MarkItDownConverter
 from app.converters.pandoc import PandocConverter
+from app.converters.pymupdf_converter import PymuPdfConverter
 from app.converters.router import (
     DEFAULT_BY_FORMAT,
     ConverterRouter,
@@ -26,7 +28,9 @@ __all__ = [
     "ConverterRouter",
     "ConverterUnavailableError",
     "FormatNotSupportedError",
+    "MarkItDownConverter",
     "PandocConverter",
+    "PymuPdfConverter",
     "RoutingDecision",
     "TargetFormat",
     "build_default_registry",
@@ -36,9 +40,12 @@ __all__ = [
 def build_default_registry() -> dict[str, BaseConverter]:
     """Registry of converters available today.
 
-    Tickets 8 will plug pymupdf/marker/markitdown instances in here.
-    The router gracefully reports "not supported" for missing entries.
+    Ticket 8b will plug ``marker`` (OCR for scanned PDFs) in once we have a
+    sane lazy-loading strategy for its ML weights. Router resolves to it
+    by name and surfaces a clear ``FormatNotSupportedError`` until then.
     """
     return {
         "pandoc": PandocConverter(),
+        "pymupdf": PymuPdfConverter(),
+        "markitdown": MarkItDownConverter(),
     }
