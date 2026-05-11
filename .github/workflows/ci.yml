@@ -56,7 +56,9 @@ jobs:
           fi
 
       - name: Validate docker-compose.yml
-        run: docker compose -f docker-compose.yml config --quiet
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose.yml config --quiet
 
       - name: Check secrets with gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -65,59 +67,46 @@ jobs:
         continue-on-error: true
 
   # -------------------------------------------------------------------------
-  # Web (Next.js) — actif quand apps/web/package.json existe.
+  # Web (Next.js) — pnpm workspace install from repo root, then per-app checks.
   # -------------------------------------------------------------------------
   web:
     name: Web (Next.js)
     needs: changes
     if: ${{ needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
 
-      - name: Skip if no package.json yet
-        id: check
-        run: |
-          if [ -f package.json ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::apps/web/package.json absent — étape ignorée."
-          fi
-
       - uses: pnpm/action-setup@v4
-        if: steps.check.outputs.exists == 'true'
         with:
           version: 9
 
       - uses: actions/setup-node@v4
-        if: steps.check.outputs.exists == 'true'
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
-          cache-dependency-path: apps/web/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install
-        if: steps.check.outputs.exists == 'true'
+      - name: Install workspace deps
         run: pnpm install --frozen-lockfile
 
       - name: Lint
-        if: steps.check.outputs.exists == 'true'
+        working-directory: apps/web
         run: pnpm lint
 
       - name: Type-check
-        if: steps.check.outputs.exists == 'true'
+        working-directory: apps/web
         run: pnpm type-check
 
       - name: Test
-        if: steps.check.outputs.exists == 'true'
-        run: pnpm test --run
+        working-directory: apps/web
+        run: pnpm test
+
+      - name: Build (production smoke)
+        working-directory: apps/web
+        run: pnpm build
 
       - name: Audit
-        if: steps.check.outputs.exists == 'true'
         run: pnpm audit --audit-level=high
         continue-on-error: true
 
@@ -162,7 +151,7 @@ jobs:
           cache-dependency-glob: 'apps/api/uv.lock'
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install 3.11.15
 
       - name: Install deps
         run: uv sync --frozen --all-extras
