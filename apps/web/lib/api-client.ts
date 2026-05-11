@@ -59,6 +59,16 @@ async function unwrap<T>(response: Response): Promise<T> {
   throw err;
 }
 
+/** Build a download URL for a single converted file. */
+export function fileDownloadUrl(fileId: string): string {
+  return `${API_BASE_URL}/api/files/${fileId}/download`;
+}
+
+/** Build a download URL for a job-level zip of all produced markdown files. */
+export function jobDownloadUrl(jobId: string): string {
+  return `${API_BASE_URL}/api/jobs/${jobId}/download`;
+}
+
 export const api = {
   async createJob(files: File[]): Promise<JobRead> {
     const body = new FormData();

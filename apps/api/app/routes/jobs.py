@@ -9,12 +9,15 @@ to poll (ticket 13 will add ``GET /jobs/{id}``).
 
 from __future__ import annotations
 
+import io
 import logging
 import uuid
+import zipfile
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.config import get_settings
 from app.converters.base import sanitise_filename
@@ -211,3 +214,66 @@ async def get_job_route(job_id: UUID) -> JobRead:
         if job is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
         return _job_to_read(job)
+
+
+@router.get(
+    "/{job_id}/download",
+    summary="Download every produced markdown file as a single .zip",
+)
+async def download_job_zip_route(job_id: UUID) -> StreamingResponse:
+    """Streams a ZIP archive — original filenames inside, .md extension."""
+    settings = get_settings()
+    with sync_session_scope() as session:
+        job = get_job(session, job_id)
+        if job is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
+        ready_files = [f for f in job.files if f.output_path]
+        if not ready_files:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "no converted file is available yet"
+            )
+
+        # Resolve every path inside the request handler — guards against
+        # tampered DB rows and dead files in one place.
+        resolved: list[tuple[str, Path]] = []
+        seen_names: set[str] = set()
+        for f in ready_files:
+            if not f.output_path:
+                continue
+            try:
+                absolute = safe_resolve_relative(settings.data_dir, f.output_path)
+            except PathTraversalError:
+                continue
+            if not absolute.exists() or not absolute.is_file():
+                continue
+            stem = sanitise_filename(Path(f.original_filename).stem)
+            name = f"{stem}.md"
+            n = 1
+            while name in seen_names:
+                n += 1
+                name = f"{stem}-{n}.md"
+            seen_names.add(name)
+            resolved.append((name, absolute))
+
+    if not resolved:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "all output files are missing on disk"
+        )
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, abspath in resolved:
+            zf.write(abspath, arcname=name)
+    buffer.seek(0)
+
+    archive_name = f"md-converter-{job_id}.zip"
+    payload = buffer.getvalue()
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "private, max-age=0, must-revalidate",
+            "Content-Disposition": f'attachment; filename="{archive_name}"',
+            "Content-Length": str(len(payload)),
+        },
+    )

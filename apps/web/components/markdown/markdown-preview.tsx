@@ -2,7 +2,7 @@
 
 import 'highlight.js/styles/github.css';
 
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Download } from 'lucide-react';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -14,10 +14,12 @@ import { cn } from '@/lib/utils';
 
 export interface MarkdownPreviewProps {
   content: string;
+  /** When present, renders a floating "Télécharger" CTA in the bottom-right. */
+  downloadUrl?: string;
   className?: string;
 }
 
-export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, downloadUrl, className }: MarkdownPreviewProps) {
   const [copied, setCopied] = useState(false);
 
   const onCopy = async () => {
@@ -58,6 +60,24 @@ export function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
           {content}
         </ReactMarkdown>
       </article>
+
+      {downloadUrl && (
+        <a
+          href={downloadUrl}
+          download
+          className={cn(
+            'fixed bottom-6 right-6 z-20 inline-flex items-center gap-2 rounded-full',
+            'bg-[var(--accent)] px-5 py-3 text-sm font-medium text-[var(--accent-foreground)]',
+            'shadow-[0_2px_12px_color-mix(in_oklch,var(--accent)_30%,transparent)]',
+            'transition-transform hover:scale-[1.02] active:scale-[0.98]',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2',
+          )}
+          aria-label="Télécharger le markdown"
+        >
+          <Download className="h-4 w-4" />
+          Télécharger
+        </a>
+      )}
     </section>
   );
 }

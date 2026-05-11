@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, BookOpen, FileText, Loader2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, Download, FileText, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
@@ -8,7 +8,12 @@ import { useState } from 'react';
 import { MarkdownPreview } from '@/components/markdown/markdown-preview';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
-import type { FileRead, JobStatus } from '@/lib/api-client';
+import {
+  fileDownloadUrl,
+  jobDownloadUrl,
+  type FileRead,
+  type JobStatus,
+} from '@/lib/api-client';
 import { useFileContent } from '@/lib/hooks/use-file-content';
 import { useJob } from '@/lib/hooks/use-job';
 import { formatBytes } from '@/lib/format';
@@ -105,6 +110,16 @@ export default function JobDetailPage() {
                   {job.data.error_message}
                 </p>
               )}
+              {doneFiles.length > 1 && job.data.status === 'done' && (
+                <a
+                  href={jobDownloadUrl(job.data.id)}
+                  download
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] px-4 py-2 text-xs font-medium transition-colors hover:bg-[var(--muted)]"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Télécharger tout (.zip)
+                </a>
+              )}
             </section>
 
             <FileList
@@ -137,7 +152,12 @@ function FilePreview({ fileId }: { fileId: string }) {
       />
     );
   }
-  return <MarkdownPreview content={content.data ?? ''} />;
+  return (
+    <MarkdownPreview
+      content={content.data ?? ''}
+      downloadUrl={fileDownloadUrl(fileId)}
+    />
+  );
 }
 
 function FileList({
