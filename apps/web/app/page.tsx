@@ -1,5 +1,6 @@
 import { BookOpen, Sparkles } from 'lucide-react';
 
+import { JobsList } from '@/components/jobs/jobs-list';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Badge } from '@/components/ui/badge';
 import { UploadPanel } from '@/components/upload/upload-panel';
@@ -41,8 +42,9 @@ export default function HomePage() {
         </p>
       </section>
 
-      <section className="space-y-6 pb-16">
+      <section className="space-y-10 pb-16">
         <UploadPanel />
+        <JobsList />
       </section>
 
       <section className="grid gap-4 border-t border-[var(--border)] pt-10 md:grid-cols-3">

@@ -8,6 +8,7 @@ from app.services.jobs import (
     fail_file,
     get_file,
     get_job,
+    list_jobs,
     recompute_job_status,
     start_file,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "fail_file",
     "get_file",
     "get_job",
+    "list_jobs",
     "recompute_job_status",
     "start_file",
 ]

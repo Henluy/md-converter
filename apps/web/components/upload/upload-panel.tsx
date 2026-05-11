@@ -1,5 +1,6 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -8,6 +9,7 @@ import { StagedFiles } from '@/components/upload/staged-files';
 import { useCreateJob } from '@/lib/hooks/use-create-job';
 
 export function UploadPanel() {
+  const queryClient = useQueryClient();
   const [staged, setStaged] = useState<File[]>([]);
   const createJob = useCreateJob({
     onSuccess: (job) => {
@@ -15,6 +17,7 @@ export function UploadPanel() {
         description: `${job.total_files} fichier${job.total_files > 1 ? 's' : ''} en file d’attente.`,
       });
       setStaged([]);
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
     onError: (error) => {
       toast.error('Échec de l’upload', {

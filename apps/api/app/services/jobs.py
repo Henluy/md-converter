@@ -104,6 +104,29 @@ def get_file(session: Session, file_id: UUID) -> FileRow | None:
     return session.get(FileRow, file_id)
 
 
+def list_jobs(
+    session: Session,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[JobRow]:
+    """Return jobs ordered by ``created_at`` DESC (newest first)."""
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+    stmt = (
+        select(JobRow)
+        .order_by(JobRow.created_at.desc().nulls_last())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = session.scalars(stmt).all()
+    # Trigger relationship load before the session closes; the route serialises
+    # each ``job.files`` synchronously.
+    for job in rows:
+        _ = job.files
+    return list(rows)
+
+
 # ---------------------------------------------------------------------------
 # State transitions
 # ---------------------------------------------------------------------------

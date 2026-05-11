@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 
 from app.config import get_settings
 from app.converters.base import sanitise_filename
@@ -35,6 +35,7 @@ from app.services import (
     NewFileSpec,
     create_job,
     get_job,
+    list_jobs,
 )
 from app.tasks import convert_file_task
 
@@ -184,6 +185,19 @@ async def create_job_route(
         logger.info("dispatched file_id=%s for job_id=%s", file_id, job_id)
 
     return response
+
+
+@router.get(
+    "",
+    response_model=list[JobRead],
+    summary="List recent jobs (newest first)",
+)
+async def list_jobs_route(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> list[JobRead]:
+    with sync_session_scope() as session:
+        return [_job_to_read(j) for j in list_jobs(session, limit=limit, offset=offset)]
 
 
 @router.get(

@@ -76,4 +76,15 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`);
     return unwrap<JobRead>(response);
   },
+
+  async listJobs(params: { limit?: number; offset?: number } = {}): Promise<JobRead[]> {
+    const search = new URLSearchParams();
+    if (params.limit !== undefined) search.set('limit', String(params.limit));
+    if (params.offset !== undefined) search.set('offset', String(params.offset));
+    const qs = search.toString();
+    const response = await fetch(
+      `${API_BASE_URL}/api/jobs${qs ? `?${qs}` : ''}`,
+    );
+    return unwrap<JobRead[]>(response);
+  },
 };

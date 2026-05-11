@@ -111,3 +111,42 @@ async def test_get_unknown_job_returns_404(client: AsyncClient) -> None:
 async def test_post_jobs_rejects_empty_payload(client: AsyncClient) -> None:
     response = await client.post("/api/jobs")
     assert response.status_code in {400, 422}
+
+
+@pytest.mark.usefixtures("db_session_sync", "override_data_dir", "skip_if_no_pandoc")
+async def test_list_jobs_returns_recent_first(
+    client: AsyncClient,
+    epub_file: Path,
+) -> None:
+    """Upload twice → GET /api/jobs returns the newest job first."""
+    for _ in range(2):
+        with epub_file.open("rb") as fh:
+            post = await client.post(
+                "/api/jobs",
+                files={"files": (epub_file.name, fh.read(), "application/epub+zip")},
+            )
+        assert post.status_code == 201
+
+    response = await client.get("/api/jobs?limit=10")
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, list)
+    assert len(payload) >= 2
+
+    # Newest first: created_at desc.
+    created_ats = [item["created_at"] for item in payload]
+    assert all(a >= b for a, b in zip(created_ats, created_ats[1:], strict=False))
+
+
+@pytest.mark.usefixtures("db_session_sync")
+async def test_list_jobs_respects_limit_and_offset(client: AsyncClient) -> None:
+    response = await client.get("/api/jobs?limit=1&offset=0")
+    assert response.status_code == 200
+    assert len(response.json()) <= 1
+
+
+async def test_list_jobs_rejects_bad_query(client: AsyncClient) -> None:
+    response = await client.get("/api/jobs?limit=0")
+    assert response.status_code == 422
+    response = await client.get("/api/jobs?limit=200")
+    assert response.status_code == 422
