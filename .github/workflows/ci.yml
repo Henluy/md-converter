@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -189,19 +190,29 @@ jobs:
 
   # -------------------------------------------------------------------------
   # Statut agrégé — utile pour la branch protection rule.
+  # Fail loud if ANY upstream is non-success (including changes detection).
   # -------------------------------------------------------------------------
   ci-success:
     name: CI success
-    needs: [repo-lint, web, api]
+    needs: [changes, repo-lint, web, api]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Aggregate result
         run: |
-          if [[ "${{ needs.repo-lint.result }}" == "failure" ]] \
-              || [[ "${{ needs.web.result }}" == "failure" ]] \
-              || [[ "${{ needs.api.result }}" == "failure" ]]; then
-            echo "❌ Un job CI a échoué."
-            exit 1
-          fi
+          fail=0
+          for job in changes repo-lint web api; do
+            case "$job" in
+              changes)   result="${{ needs.changes.result }}"   ;;
+              repo-lint) result="${{ needs.repo-lint.result }}" ;;
+              web)       result="${{ needs.web.result }}"       ;;
+              api)       result="${{ needs.api.result }}"       ;;
+            esac
+            # "skipped" is acceptable for web/api (no changes detected).
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "❌ $job ended in $result"
+              fail=1
+            fi
+          done
+          if [[ "$fail" -eq 1 ]]; then exit 1; fi
           echo "✔ CI green."

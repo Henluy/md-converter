@@ -16,6 +16,10 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # Major bumps are gated to a human review — they always break something.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "uv"
     directory: "/apps/api"
@@ -33,6 +37,9 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
