@@ -1,6 +1,7 @@
 """Service layer — domain operations that span DB rows and files."""
 
 from app.services.jobs import (
+    JobValidationError,
     NewFileSpec,
     complete_file,
     create_job,
@@ -12,6 +13,7 @@ from app.services.jobs import (
 )
 
 __all__ = [
+    "JobValidationError",
     "NewFileSpec",
     "complete_file",
     "create_job",

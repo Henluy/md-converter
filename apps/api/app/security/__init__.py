@@ -1,5 +1,6 @@
-"""Security helpers — input validation, path sanitisation, PDF stripping."""
+"""Security helpers — input validation, path sanitisation, batch limits."""
 
+from app.security.storage import PathTraversalError, safe_resolve_relative
 from app.security.validation import (
     DetectedFormat,
     FileTooLargeError,
@@ -15,7 +16,9 @@ __all__ = [
     "FileTooLargeError",
     "FileValidationError",
     "MimeTypeMismatchError",
+    "PathTraversalError",
     "UnsupportedExtensionError",
     "detect_format",
+    "safe_resolve_relative",
     "validate_upload",
 ]

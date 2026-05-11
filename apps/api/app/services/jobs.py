@@ -14,8 +14,13 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.converters import ConversionResult
 from app.models.db import FileRow, JobRow, JobStatus
+
+
+class JobValidationError(Exception):
+    """Raised when create_job inputs violate the configured batch limits."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,11 +42,30 @@ class NewFileSpec:
 def create_job(session: Session, files: list[NewFileSpec]) -> JobRow:
     """Persist a new job and its file rows in a single transaction.
 
+    Enforces BRIEF §10 batch limits before any row is written:
+      - ``max_files_per_job``
+      - ``max_job_size_mb`` (sum of ``size_bytes`` for files that provided one)
+
     Returns the job row (with its UUID populated and the FileRow children
     accessible via ``job.files`` after a refresh).
     """
     if not files:
         raise ValueError("create_job: cannot create a job with zero files")
+
+    settings = get_settings()
+    if len(files) > settings.max_files_per_job:
+        raise JobValidationError(
+            f"too many files in one job: {len(files)} > "
+            f"max_files_per_job={settings.max_files_per_job}"
+        )
+
+    job_size_bytes = sum(f.size_bytes or 0 for f in files)
+    job_size_limit = settings.max_job_size_mb * 1024 * 1024
+    if job_size_bytes > job_size_limit:
+        raise JobValidationError(
+            f"job is {job_size_bytes} bytes; limit is {job_size_limit} "
+            f"({settings.max_job_size_mb} MB)"
+        )
 
     job = JobRow(
         status=JobStatus.pending.value,

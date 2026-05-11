@@ -33,7 +33,12 @@ from app.converters import (
     build_default_registry,
 )
 from app.db_sync import sync_session_scope
-from app.security import FileValidationError, validate_upload
+from app.security import (
+    FileValidationError,
+    PathTraversalError,
+    safe_resolve_relative,
+    validate_upload,
+)
 from app.services import (
     complete_file,
     fail_file,
@@ -101,7 +106,17 @@ def convert_file_task(
         if file_row is None:
             raise LookupError(f"file_id={file_id} not found")
         job_uuid = file_row.job_id
-        input_path = settings.data_dir / file_row.storage_path
+        try:
+            input_path = safe_resolve_relative(
+                settings.data_dir, file_row.storage_path
+            )
+        except PathTraversalError as exc:
+            fail_file(
+                session,
+                file_uuid,
+                error_message=f"PathTraversalError: {exc}",
+            )
+            raise
         start_file(session, file_uuid)
 
     assert job_uuid is not None
@@ -128,6 +143,7 @@ def convert_file_task(
         ConverterUnavailableError,
         FormatNotSupportedError,
         FileValidationError,
+        PathTraversalError,
     ) as exc:
         logger.exception("task=%s conversion failed", self.request.id)
         with sync_session_scope() as session:

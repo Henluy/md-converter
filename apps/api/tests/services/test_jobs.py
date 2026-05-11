@@ -13,6 +13,7 @@ import pytest
 from app.converters import ConversionResult
 from app.models.db import JobStatus
 from app.services import (
+    JobValidationError,
     NewFileSpec,
     complete_file,
     create_job,
@@ -55,6 +56,45 @@ def test_create_job_persists_rows(db_session_sync: Session) -> None:
 def test_create_job_rejects_empty_files(db_session_sync: Session) -> None:
     with pytest.raises(ValueError):
         create_job(db_session_sync, [])
+
+
+def test_create_job_rejects_too_many_files(
+    db_session_sync: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A batch above ``max_files_per_job`` is refused before any row is written."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("MAX_FILES_PER_JOB", "3")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(JobValidationError):
+            create_job(db_session_sync, [_spec() for _ in range(4)])
+    finally:
+        get_settings.cache_clear()
+
+
+def test_create_job_rejects_oversized_batch(
+    db_session_sync: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sum of file sizes above ``max_job_size_mb`` is refused."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("MAX_JOB_SIZE_MB", "1")  # 1 MB limit
+    get_settings.cache_clear()
+    try:
+        big = NewFileSpec(
+            original_filename="huge.pdf",
+            stored_filename=f"{uuid4().hex}_huge.pdf",
+            original_format=".pdf",
+            storage_path=f"input/{uuid4().hex}_huge.pdf",
+            size_bytes=2 * 1024 * 1024,  # 2 MB
+        )
+        with pytest.raises(JobValidationError):
+            create_job(db_session_sync, [big])
+    finally:
+        get_settings.cache_clear()
 
 
 def test_start_file_marks_job_processing(db_session_sync: Session) -> None:
