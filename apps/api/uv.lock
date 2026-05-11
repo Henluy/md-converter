@@ -795,7 +795,7 @@ requires-dist = [
     { name = "python-magic", specifier = ">=0.4.27" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "slowapi", specifier = ">=0.1.9" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.49" },
     { name = "structlog", specifier = ">=24.4.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
 ]
