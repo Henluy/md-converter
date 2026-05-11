@@ -1,0 +1,56 @@
+# Env & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Data (fichiers utilisateur)
+/data/input/*
+/data/output/*
+!/data/input/.gitkeep
+!/data/output/.gitkeep
+
+# Node
+node_modules/
+.next/
+out/
+*.log
+.turbo/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# DB locales
+*.sqlite
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+coverage/
+.coverage
+htmlcov/
+
+# Misc
+.tmp/
+tmp/
