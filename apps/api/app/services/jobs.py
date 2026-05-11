@@ -104,6 +104,24 @@ def get_file(session: Session, file_id: UUID) -> FileRow | None:
     return session.get(FileRow, file_id)
 
 
+def delete_job(session: Session, job_id: UUID) -> list[str]:
+    """Remove a job, its file rows (cascade), and return the relative paths
+    that the caller should clean up on disk."""
+    job = session.get(JobRow, job_id)
+    if job is None:
+        raise LookupError(f"job_id={job_id} not found")
+
+    paths: list[str] = []
+    for f in job.files:
+        if f.storage_path:
+            paths.append(f.storage_path)
+        if f.output_path:
+            paths.append(f.output_path)
+
+    session.delete(job)
+    return paths
+
+
 def list_jobs(
     session: Session,
     *,

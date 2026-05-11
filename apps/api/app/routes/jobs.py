@@ -37,6 +37,7 @@ from app.services import (
     JobValidationError,
     NewFileSpec,
     create_job,
+    delete_job,
     get_job,
     list_jobs,
 )
@@ -214,6 +215,49 @@ async def get_job_route(job_id: UUID) -> JobRead:
         if job is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
         return _job_to_read(job)
+
+
+@router.delete(
+    "/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a job, its files rows, and the files on disk",
+)
+async def delete_job_route(job_id: UUID) -> None:
+    settings = get_settings()
+    try:
+        with sync_session_scope() as session:
+            relative_paths = delete_job(session, job_id)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+    # Best-effort filesystem cleanup AFTER the DB commit so we never orphan
+    # rows; any path-traversal in storage is filtered by safe_resolve_relative.
+    for rel in relative_paths:
+        try:
+            absolute = safe_resolve_relative(settings.data_dir, rel)
+        except PathTraversalError:
+            logger.warning(
+                "skipped suspicious path during delete job_id=%s path=%s",
+                job_id, rel,
+            )
+            continue
+        if absolute.is_file():
+            try:
+                absolute.unlink()
+            except OSError as exc:
+                logger.warning(
+                    "could not delete %s for job_id=%s: %s", absolute, job_id, exc
+                )
+
+    # Also drop the per-job output directory if it's now empty.
+    try:
+        output_dir = safe_resolve_relative(
+            settings.data_dir, f"output/{job_id}"
+        )
+        if output_dir.is_dir() and not any(output_dir.iterdir()):
+            output_dir.rmdir()
+    except (PathTraversalError, OSError):
+        pass
 
 
 @router.get(

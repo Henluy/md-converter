@@ -152,3 +152,43 @@ async def test_list_jobs_rejects_bad_query(client: AsyncClient) -> None:
     assert response.status_code == 422
     response = await client.get("/api/jobs?limit=200")
     assert response.status_code == 422
+
+
+@pytest.mark.usefixtures("db_session_sync", "override_data_dir", "skip_if_no_pandoc")
+async def test_delete_job_removes_db_rows_and_files(
+    client: AsyncClient,
+    override_data_dir: Path,
+    epub_file: Path,
+) -> None:
+    """DELETE wipes DB rows AND the on-disk artefacts."""
+    with epub_file.open("rb") as fh:
+        post = await client.post(
+            "/api/jobs",
+            files={"files": (epub_file.name, fh.read(), "application/epub+zip")},
+        )
+    assert post.status_code == 201
+    job_id = post.json()["id"]
+
+    # Files should be on disk after the eager conversion.
+    input_dir = override_data_dir / "input"
+    output_dir = override_data_dir / "output" / job_id
+    assert any(input_dir.iterdir())
+    assert output_dir.is_dir() and any(output_dir.iterdir())
+
+    response = await client.delete(f"/api/jobs/{job_id}")
+    assert response.status_code == 204
+
+    # GET now returns 404.
+    follow = await client.get(f"/api/jobs/{job_id}")
+    assert follow.status_code == 404
+
+    # Disk cleaned up.
+    assert not any(input_dir.iterdir())
+    assert not output_dir.exists()
+
+
+async def test_delete_unknown_job_returns_404(client: AsyncClient) -> None:
+    response = await client.delete(
+        "/api/jobs/00000000-0000-0000-0000-000000000000"
+    )
+    assert response.status_code == 404

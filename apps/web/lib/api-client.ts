@@ -98,6 +98,23 @@ export const api = {
     return unwrap<JobRead[]>(response);
   },
 
+  async deleteJob(jobId: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok && response.status !== 204) {
+      let detail = response.statusText;
+      try {
+        const body = (await response.json()) as { detail?: string };
+        if (body.detail) detail = body.detail;
+      } catch {
+        // ignore
+      }
+      const err: ApiError = { status: response.status, detail };
+      throw err;
+    }
+  },
+
   async getFileContent(fileId: string): Promise<string> {
     const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/content`);
     if (response.ok) return response.text();

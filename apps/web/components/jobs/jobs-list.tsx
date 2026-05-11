@@ -2,6 +2,7 @@
 
 import { AnimatePresence } from 'framer-motion';
 import { Inbox } from 'lucide-react';
+import Link from 'next/link';
 
 import { JobCard } from '@/components/jobs/job-card';
 import { useJobs } from '@/lib/hooks/use-jobs';
@@ -15,9 +16,12 @@ export function JobsList() {
         <h2 id="jobs-heading" className="font-display text-xl">
           Conversions récentes
         </h2>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-[var(--muted-foreground)]/70">
-          {jobs?.length ?? 0}/10
-        </span>
+        <Link
+          href="/history"
+          className="text-xs text-[var(--muted-foreground)] underline-offset-2 hover:text-[var(--foreground)] hover:underline"
+        >
+          Tout l’historique →
+        </Link>
       </div>
 
       {isError && (

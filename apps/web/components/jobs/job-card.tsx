@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Check, FileText, Loader2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 
+import { DeleteJobDialog } from '@/components/jobs/delete-job-dialog';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import type { JobRead, JobStatus } from '@/lib/api-client';
 import { formatBytes } from '@/lib/format';
@@ -108,10 +109,16 @@ export function JobCard({ job }: JobCardProps) {
           </div>
         </div>
 
-        <Badge variant={status.variant} className="shrink-0">
-          <StatusIcon status={job.status} />
-          {status.label}
-        </Badge>
+        <div className="relative z-20 flex items-center gap-1.5">
+          <Badge variant={status.variant} className="shrink-0">
+            <StatusIcon status={job.status} />
+            {status.label}
+          </Badge>
+          <DeleteJobDialog
+            jobId={job.id}
+            jobLabel={titleFile?.original_filename ?? job.id}
+          />
+        </div>
       </header>
 
       <dl className="relative z-10 mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-xs md:grid-cols-4">

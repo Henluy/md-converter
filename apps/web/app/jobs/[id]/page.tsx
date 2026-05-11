@@ -2,9 +2,10 @@
 
 import { ArrowLeft, BookOpen, Download, FileText, Loader2 } from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { DeleteJobDialog } from '@/components/jobs/delete-job-dialog';
 import { MarkdownPreview } from '@/components/markdown/markdown-preview';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
@@ -28,12 +29,14 @@ const STATUS_COPY: Record<JobStatus, { label: string; variant: BadgeProps['varia
 
 export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const jobId = params.id;
   const job = useJob(jobId);
 
   const doneFiles = (job.data?.files ?? []).filter((f) => f.output_path);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const activeId = selectedId ?? doneFiles[0]?.id ?? null;
+  const titleFile = job.data?.files[0];
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-7xl flex-col px-6 py-8 md:px-10">
@@ -58,7 +61,7 @@ export default function JobDetailPage() {
         <ThemeToggle />
       </header>
 
-      <div className="mt-6 mb-4">
+      <div className="mt-6 mb-4 flex items-center justify-between">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
@@ -66,6 +69,13 @@ export default function JobDetailPage() {
           <ArrowLeft className="h-3 w-3" />
           Tous les jobs
         </Link>
+        {job.data && (
+          <DeleteJobDialog
+            jobId={job.data.id}
+            jobLabel={titleFile?.original_filename ?? job.data.id}
+            onDeleted={() => router.push('/')}
+          />
+        )}
       </div>
 
       {job.isError && (
