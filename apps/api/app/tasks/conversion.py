@@ -1,8 +1,8 @@
 """The conversion Celery task.
 
-Scope of ticket 6: convert one file via the worker, return a JSON-friendly
-ConversionResult dict. Database persistence (jobs/files rows) is layered
-on top at ticket 10.
+Ticket 6 wired the worker; ticket 7 routes the input through the
+validation + router pipeline before handing it to the right converter.
+Database persistence is layered on at ticket 10.
 """
 
 from __future__ import annotations
@@ -14,29 +14,32 @@ from typing import Any
 from celery.exceptions import SoftTimeLimitExceeded
 
 from app.converters import (
-    BaseConverter,
     ConversionError,
     ConversionResult,
+    ConverterRouter,
     ConverterUnavailableError,
     FormatNotSupportedError,
-    PandocConverter,
+    build_default_registry,
 )
+from app.security import FileValidationError, validate_upload
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-# Registry of factories — extended at tickets 7-8 (pymupdf, marker, markitdown)
-# and consumed by the router. Kept here for ticket 6 minimal scope.
-_CONVERTERS: dict[str, type[BaseConverter]] = {
-    "pandoc": PandocConverter,
-}
 
-
-def _result_to_payload(result: ConversionResult) -> dict[str, Any]:
-    """JSON-serializable representation (Celery result backend stores JSON)."""
+def _result_to_payload(
+    result: ConversionResult,
+    *,
+    converter_name: str,
+    target_format: str,
+    detected_mime: str,
+) -> dict[str, Any]:
+    """JSON-friendly representation (Celery result backend stores JSON)."""
     return {
         "output_path": str(result.output_path),
-        "converter": result.converter,
+        "converter": converter_name,
+        "target_format": target_format,
+        "detected_mime": detected_mime,
         "pages": result.pages,
         "size_bytes": result.size_bytes,
         "duration_seconds": result.duration_seconds,
@@ -44,7 +47,7 @@ def _result_to_payload(result: ConversionResult) -> dict[str, Any]:
     }
 
 
-@celery_app.task(  # type: ignore[untyped-decorator]  # celery has no py.typed marker
+@celery_app.task(  # type: ignore[untyped-decorator]
     name="md-converter.convert_file",
     bind=True,
     autoretry_for=(),
@@ -56,27 +59,27 @@ def convert_file_task(
     *,
     input_path: str,
     output_dir: str,
-    converter_name: str = "pandoc",
+    override: str | None = None,
 ) -> dict[str, Any]:
-    """Run one document conversion and return its result as JSON."""
+    """Validate → route → convert. Errors propagate (ticket 10 handles DB)."""
     src = Path(input_path)
     dst = Path(output_dir)
 
-    converter_cls = _CONVERTERS.get(converter_name)
-    if converter_cls is None:
-        raise ConverterUnavailableError(
-            f"Unknown converter {converter_name!r}; available: {sorted(_CONVERTERS)}"
-        )
+    logger.info("task=%s start input=%s", self.request.id, src)
 
-    converter = converter_cls()
+    # Validate (raises FileValidationError on rejection)
+    detected = validate_upload(src)
+
+    router = ConverterRouter(build_default_registry())
+    decision = router.resolve(src, override=override)
 
     logger.info(
-        "task=%s start input=%s converter=%s",
-        self.request.id, src, converter_name,
+        "task=%s routed target=%s converter=%s",
+        self.request.id, decision.target_format, decision.converter_name,
     )
 
     try:
-        result = converter.convert(src, dst)
+        result = decision.converter.convert(src, dst)
     except SoftTimeLimitExceeded as exc:
         logger.warning("task=%s soft time limit reached", self.request.id)
         raise ConversionError("Converter exceeded the soft time limit") from exc
@@ -84,13 +87,17 @@ def convert_file_task(
         ConversionError,
         ConverterUnavailableError,
         FormatNotSupportedError,
+        FileValidationError,
     ):
-        # Bubble up — callers (and ticket 10's persistence layer) translate
-        # these into job/file status updates.
         raise
 
     logger.info(
         "task=%s done output=%s bytes=%d duration=%.3fs",
         self.request.id, result.output_path, result.size_bytes, result.duration_seconds,
     )
-    return _result_to_payload(result)
+    return _result_to_payload(
+        result,
+        converter_name=decision.converter_name,
+        target_format=str(decision.target_format),
+        detected_mime=detected.mime_type,
+    )

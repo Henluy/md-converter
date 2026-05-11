@@ -41,6 +41,29 @@ class Settings(BaseSettings):
     max_files_per_job: int = 50
     job_timeout_seconds: int = 300
 
+    # --- Upload validation (BRIEF §10) -----------------------------------
+    allowed_extensions: str = ".epub,.pdf,.docx,.html,.txt"
+    # MIME types accepted by libmagic, mapped 1:1 to extensions when checked.
+    allowed_mime_types: str = (
+        "application/epub+zip,"
+        "application/pdf,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "text/html,"
+        "text/plain"
+    )
+
+    @property
+    def allowed_extensions_set(self) -> frozenset[str]:
+        return frozenset(
+            ext.strip().lower() for ext in self.allowed_extensions.split(",") if ext.strip()
+        )
+
+    @property
+    def allowed_mime_types_set(self) -> frozenset[str]:
+        return frozenset(
+            mt.strip().lower() for mt in self.allowed_mime_types.split(",") if mt.strip()
+        )
+
     # --- Redis / Celery --------------------------------------------------
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/0"

@@ -1,12 +1,15 @@
-"""Minimal CLI for direct, queue-less conversion (ticket 5 scope).
+"""Minimal CLI for direct, queue-less conversion.
 
 Usage::
 
     uv run python -m app.cli --input book.epub --output ./data/output
-    uv run python -m app.cli --input book.epub --output ./data/output --converter pandoc
+    uv run python -m app.cli --input book.epub --output ./data/output --override pandoc
 
-Once the queue lands (ticket 6) this stays useful for ad-hoc tests and
-batch scripts.
+Behaviour:
+- File is validated (whitelist + libmagic + size) before routing.
+- Router picks the right converter based on the detected target format.
+- ``--override`` forces a specific registered converter, e.g. Marker on a
+  text-native PDF.
 """
 
 from __future__ import annotations
@@ -14,26 +17,22 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from collections.abc import Callable
 from pathlib import Path
 
 from app.converters import (
-    BaseConverter,
     ConversionError,
+    ConverterRouter,
     ConverterUnavailableError,
     FormatNotSupportedError,
-    PandocConverter,
+    build_default_registry,
+)
+from app.security import (
+    FileTooLargeError,
+    FileValidationError,
+    validate_upload,
 )
 
 logger = logging.getLogger("md-converter.cli")
-
-ConverterFactory = Callable[[int], BaseConverter]
-
-# Registry of factories — each takes (timeout_seconds) → BaseConverter.
-# Extended at tickets 7-8 (pymupdf, marker, markitdown).
-_CONVERTERS: dict[str, ConverterFactory] = {
-    "pandoc": lambda timeout: PandocConverter(timeout_seconds=timeout),
-}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -45,7 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--input", "-i",
         required=True,
         type=Path,
-        help="Path to the source file (EPUB for now).",
+        help="Path to the source file.",
     )
     parser.add_argument(
         "--output", "-o",
@@ -54,10 +53,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output directory; created if missing.",
     )
     parser.add_argument(
-        "--converter", "-c",
-        choices=sorted(_CONVERTERS),
-        default="pandoc",
-        help="Converter to use (default: pandoc).",
+        "--override", "-c",
+        default=None,
+        help="Force a registered converter (overrides routing decision).",
     )
     parser.add_argument(
         "--timeout",
@@ -82,16 +80,40 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    converter = _CONVERTERS[args.converter](args.timeout)
-
+    # ---- 1. validate ---------------------------------------------------
     try:
-        result = converter.convert(args.input, args.output)
-    except ConverterUnavailableError as exc:
-        logger.error("Converter unavailable: %s", exc)
-        return 2
+        detected = validate_upload(args.input)
+    except FileTooLargeError as exc:
+        logger.error("Rejected: %s", exc)
+        return 5
+    except FileValidationError as exc:
+        logger.error("Rejected: %s", exc)
+        return 5
+
+    logger.debug(
+        "validated input=%s ext=%s mime=%s size=%d",
+        args.input, detected.extension, detected.mime_type, detected.size_bytes,
+    )
+
+    # ---- 2. route -----------------------------------------------------
+    router = ConverterRouter(build_default_registry())
+    try:
+        decision = router.resolve(args.input, override=args.override)
     except FormatNotSupportedError as exc:
         logger.error("Unsupported input: %s", exc)
         return 3
+
+    logger.info(
+        "routed target=%s converter=%s",
+        decision.target_format, decision.converter_name,
+    )
+
+    # ---- 3. convert ---------------------------------------------------
+    try:
+        result = decision.converter.convert(args.input, args.output)
+    except ConverterUnavailableError as exc:
+        logger.error("Converter unavailable: %s", exc)
+        return 2
     except ConversionError as exc:
         logger.error("Conversion failed: %s", exc)
         if exc.stderr:
