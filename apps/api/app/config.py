@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/1"
+    celery_task_always_eager: bool = False
+    celery_task_soft_time_limit: int = 300
+    celery_task_time_limit: int = 360
 
     # --- Security --------------------------------------------------------
     cors_origins: str = "http://localhost:3000"

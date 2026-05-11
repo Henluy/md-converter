@@ -127,6 +127,14 @@ format: ## Formate le code (prettier + ruff)
 api-dev: ## Démarre l'API en mode reload hors-docker
 	cd apps/api && $(UV) run uvicorn app.main:app --reload --port 8000
 
+.PHONY: worker-dev
+worker-dev: ## Démarre un worker Celery hors-docker (redis doit tourner)
+	cd apps/api && $(UV) run celery -A app.tasks.celery_app:celery_app worker --loglevel=info --concurrency=2
+
+.PHONY: redis-up
+redis-up: ## Démarre uniquement Redis via docker compose
+	$(DC) up -d redis
+
 .PHONY: api-sync
 api-sync: ## uv sync (installe / met à jour les deps Python)
 	cd apps/api && $(UV) sync
