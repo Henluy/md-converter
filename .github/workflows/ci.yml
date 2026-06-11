@@ -78,9 +78,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version comes from package.json "packageManager" (avoids the
+      # action erroring on a duplicate version specification).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
@@ -152,15 +152,15 @@ jobs:
           cache-dependency-glob: 'apps/api/uv.lock'
 
       - name: Set up Python
-        run: uv python install 3.11.15
+        # Pin the minor only — exact patch builds (e.g. 3.11.15) get pruned
+        # from python-build-standalone over time and break the install.
+        run: uv python install 3.11
 
       - name: Install deps
         run: uv sync --frozen --all-extras
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Set up Node
         uses: actions/setup-node@v4
