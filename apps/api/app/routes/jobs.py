@@ -68,10 +68,15 @@ def _file_to_read(file: FileRow) -> FileRead:
         job_id=file.job_id,
         original_filename=file.original_filename,
         original_format=file.original_format,
+        status=file.status,
         converter_used=file.converter_used,
         output_path=file.output_path,
         size_bytes=file.size_bytes,
         pages=file.pages,
+        error_message=file.error_message,
+        warnings=file.warnings,
+        quality_score=file.quality_score,
+        quality_level=file.quality_level,
         created_at=file.created_at,
     )
 

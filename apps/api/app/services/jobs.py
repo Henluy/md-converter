@@ -11,12 +11,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.converters import ConversionResult
-from app.models.db import FileRow, JobRow, JobStatus
+from app.models.db import FileRow, FileStatus, JobRow, JobStatus
+from app.processors import QualityAssessment
+
+# Cap how many warnings we persist per file so a chatty converter (pandoc
+# can emit one stderr line per glyph issue) never bloats the row.
+_MAX_WARNINGS = 50
 
 
 class JobValidationError(Exception):
@@ -151,15 +156,16 @@ def list_jobs(
 
 
 def start_file(session: Session, file_id: UUID) -> FileRow:
-    """Mark a file's job as processing and return the file row.
+    """Mark a file as processing (and move its job out of ``pending``).
 
-    Idempotent: if the job is already processing/done/failed we leave it
-    alone. We never downgrade a status that's already terminal.
+    Idempotent: we only push the job ``pending → processing`` and never
+    downgrade a status that's already terminal.
     """
     file_row = session.get(FileRow, file_id)
     if file_row is None:
         raise LookupError(f"file_id={file_id} not found")
 
+    file_row.status = FileStatus.processing.value
     session.execute(
         update(JobRow)
         .where(JobRow.id == file_row.job_id)
@@ -176,8 +182,9 @@ def complete_file(
     *,
     converter_name: str,
     output_relative_path: str,
+    quality: QualityAssessment | None = None,
 ) -> FileRow:
-    """Persist a successful conversion's output and bump processed_files."""
+    """Persist a successful conversion's output, quality and warnings."""
     file_row = session.get(FileRow, file_id)
     if file_row is None:
         raise LookupError(f"file_id={file_id} not found")
@@ -186,6 +193,14 @@ def complete_file(
     file_row.converter_used = converter_name
     file_row.size_bytes = result.size_bytes
     file_row.pages = result.pages
+    file_row.status = FileStatus.done.value
+
+    warnings = list(result.warnings)
+    if quality is not None:
+        warnings = [*quality.warnings, *warnings]
+        file_row.quality_score = quality.score
+        file_row.quality_level = quality.level
+    file_row.warnings = warnings[:_MAX_WARNINGS] or None
 
     session.execute(
         update(JobRow)
@@ -201,44 +216,73 @@ def fail_file(
     *,
     error_message: str,
 ) -> FileRow:
-    """Record a conversion failure on the parent job."""
+    """Record a per-file conversion failure and bump the processed counter.
+
+    The *job's* status is left to :func:`recompute_job_status` so a batch can
+    still end as ``partial_success`` when other files convert fine.
+    """
     file_row = session.get(FileRow, file_id)
     if file_row is None:
         raise LookupError(f"file_id={file_id} not found")
 
+    file_row.status = FileStatus.failed.value
+    file_row.error_message = error_message
+
     session.execute(
         update(JobRow)
         .where(JobRow.id == file_row.job_id)
-        .values(
-            status=JobStatus.failed.value,
-            error_message=error_message,
-            completed_at=datetime.now(UTC),
-        )
+        .values(processed_files=JobRow.processed_files + 1)
     )
     return file_row
 
 
-def recompute_job_status(session: Session, job_id: UUID) -> JobStatus:
-    """Move a job to ``done`` once all its files completed successfully.
+def compute_job_status(*, total: int, succeeded: int, failed: int) -> JobStatus:
+    """Decide a job's status from its per-file tallies. Pure / DB-free.
 
-    ``failed`` is set immediately by :func:`fail_file`; this helper only
-    handles the success → done transition.
+    - nothing to do yet → ``pending``
+    - some files still running → ``processing``
+    - every file converted → ``done``
+    - every file failed → ``failed``
+    - a mix of both → ``partial_success``
     """
+    if total <= 0:
+        return JobStatus.pending
+    if succeeded + failed < total:
+        return JobStatus.processing
+    if failed == 0:
+        return JobStatus.done
+    if succeeded == 0:
+        return JobStatus.failed
+    return JobStatus.partial_success
+
+
+def recompute_job_status(session: Session, job_id: UUID) -> JobStatus:
+    """Recompute and persist a job's status from its files' statuses."""
     job = session.get(JobRow, job_id)
     if job is None:
         raise LookupError(f"job_id={job_id} not found")
 
-    if job.status == JobStatus.failed.value:
-        return JobStatus.failed
+    # The session runs with autoflush disabled (see db_sync), so flush any
+    # pending per-file status changes (from complete_file/fail_file in this
+    # same transaction) before we count them — otherwise the tallies are stale.
+    session.flush()
 
-    files_count = session.scalar(
-        select(JobRow.total_files).where(JobRow.id == job_id)
+    total = job.total_files or 0
+    succeeded = session.scalar(
+        select(func.count())
+        .select_from(FileRow)
+        .where(FileRow.job_id == job_id, FileRow.status == FileStatus.done.value)
     ) or 0
-    processed = job.processed_files or 0
+    failed = session.scalar(
+        select(func.count())
+        .select_from(FileRow)
+        .where(FileRow.job_id == job_id, FileRow.status == FileStatus.failed.value)
+    ) or 0
 
-    if files_count and processed >= files_count:
-        job.status = JobStatus.done.value
+    status = compute_job_status(total=total, succeeded=succeeded, failed=failed)
+    job.status = status.value
+    if status in (JobStatus.done, JobStatus.failed, JobStatus.partial_success):
         job.completed_at = datetime.now(UTC)
-        return JobStatus.done
-
-    return JobStatus(job.status)
+        if failed:
+            job.error_message = f"{failed} of {total} file(s) failed to convert"
+    return status

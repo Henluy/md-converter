@@ -175,17 +175,65 @@ def test_complete_file_records_output_and_increments(
     assert isinstance(final.completed_at, datetime)
 
 
-def test_fail_file_sets_job_failed(db_session_sync: Session) -> None:
+def test_fail_file_marks_only_the_file(db_session_sync: Session) -> None:
+    """fail_file records the per-file failure but doesn't condemn the job —
+    other files may still succeed (→ partial_success)."""
     job = create_job(db_session_sync, [_spec(), _spec()])
+    f1 = job.files[0]
+    fail_file(db_session_sync, f1.id, error_message="boom")
+    db_session_sync.flush()
+
+    file_row = get_file(db_session_sync, f1.id)
+    assert file_row is not None
+    assert file_row.status == "failed"
+    assert file_row.error_message == "boom"
+
+    # f2 is still pending → the job is not terminal yet.
+    status = recompute_job_status(db_session_sync, job.id)
+    assert status == JobStatus.processing
+
+
+def test_recompute_all_failed_is_failed(db_session_sync: Session) -> None:
+    job = create_job(db_session_sync, [_spec()])
     fail_file(db_session_sync, job.files[0].id, error_message="boom")
     db_session_sync.flush()
+
+    status = recompute_job_status(db_session_sync, job.id)
+    assert status == JobStatus.failed
 
     fetched = get_job(db_session_sync, job.id)
     assert fetched is not None
     assert fetched.status == JobStatus.failed.value
-    assert fetched.error_message == "boom"
     assert fetched.completed_at is not None
 
-    # recompute keeps it failed even if other files later succeed
+
+def test_recompute_mixed_outcome_is_partial_success(
+    db_session_sync: Session,
+    tmp_path: Path,
+) -> None:
+    job = create_job(db_session_sync, [_spec(), _spec()])
+    f1, f2 = job.files
+    res = ConversionResult(
+        output_path=tmp_path / "output" / "x.md",
+        converter="pandoc",
+        pages=3,
+        size_bytes=1024,
+        duration_seconds=0.1,
+    )
+    complete_file(
+        db_session_sync,
+        f1.id,
+        res,
+        converter_name="pandoc",
+        output_relative_path="output/x.md",
+    )
+    fail_file(db_session_sync, f2.id, error_message="boom")
+    db_session_sync.flush()
+
     status = recompute_job_status(db_session_sync, job.id)
-    assert status == JobStatus.failed
+    assert status == JobStatus.partial_success
+
+    fetched = get_job(db_session_sync, job.id)
+    assert fetched is not None
+    assert fetched.status == JobStatus.partial_success.value
+    assert fetched.completed_at is not None

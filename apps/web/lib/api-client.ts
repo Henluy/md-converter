@@ -14,17 +14,29 @@ export const MAX_FILES_PER_JOB = 50;
 export const ALLOWED_EXTENSIONS = ['.epub', '.pdf', '.docx', '.html', '.txt'] as const;
 
 export type AllowedExtension = (typeof ALLOWED_EXTENSIONS)[number];
-export type JobStatus = 'pending' | 'processing' | 'done' | 'failed';
+export type JobStatus =
+  | 'pending'
+  | 'processing'
+  | 'done'
+  | 'failed'
+  | 'partial_success';
+export type FileStatus = 'pending' | 'processing' | 'done' | 'failed';
+export type QualityLevel = 'high' | 'medium' | 'low';
 
 export interface FileRead {
   id: string;
   job_id: string;
   original_filename: string;
   original_format: string;
+  status: FileStatus;
   converter_used: string | null;
   output_path: string | null;
   size_bytes: number | null;
   pages: number | null;
+  error_message: string | null;
+  warnings: string[] | null;
+  quality_score: number | null;
+  quality_level: QualityLevel | null;
   created_at: string | null;
 }
 

@@ -11,6 +11,7 @@ from app.converters.errors import (
     FormatNotSupportedError,
 )
 from app.converters.markitdown import MarkItDownConverter
+from app.converters.ocr import OcrPdfConverter
 from app.converters.pandoc import PandocConverter
 from app.converters.pymupdf_converter import PymuPdfConverter
 from app.converters.router import (
@@ -29,6 +30,7 @@ __all__ = [
     "ConverterUnavailableError",
     "FormatNotSupportedError",
     "MarkItDownConverter",
+    "OcrPdfConverter",
     "PandocConverter",
     "PymuPdfConverter",
     "RoutingDecision",
@@ -40,12 +42,18 @@ __all__ = [
 def build_default_registry() -> dict[str, BaseConverter]:
     """Registry of converters available today.
 
-    Ticket 8b will plug ``marker`` (OCR for scanned PDFs) in once we have a
-    sane lazy-loading strategy for its ML weights. Router resolves to it
-    by name and surfaces a clear ``FormatNotSupportedError`` until then.
+    The OCR converter is always registered so scanned PDFs route to it, but
+    it stays inert (raising a clear ``ConverterUnavailableError``) unless
+    ``ENABLE_OCR=1`` and the ocrmypdf binary is present.
     """
+    from app.config import get_settings
+
+    settings = get_settings()
     return {
         "pandoc": PandocConverter(),
         "pymupdf": PymuPdfConverter(),
         "markitdown": MarkItDownConverter(),
+        "ocr": OcrPdfConverter(
+            enabled=settings.enable_ocr, language=settings.ocr_language
+        ),
     }

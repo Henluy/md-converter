@@ -1,6 +1,13 @@
 'use client';
 
-import { ArrowLeft, BookOpen, Download, FileText, Loader2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  BookOpen,
+  Download,
+  FileText,
+  Loader2,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -8,23 +15,24 @@ import { useState } from 'react';
 import { DeleteJobDialog } from '@/components/jobs/delete-job-dialog';
 import { MarkdownPreview } from '@/components/markdown/markdown-preview';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { Badge, type BadgeProps } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import {
   fileDownloadUrl,
   jobDownloadUrl,
   type FileRead,
   type JobStatus,
+  type QualityLevel,
 } from '@/lib/api-client';
 import { useFileContent } from '@/lib/hooks/use-file-content';
 import { useJob } from '@/lib/hooks/use-job';
 import { formatBytes } from '@/lib/format';
+import { JOB_STATUS_COPY, QUALITY_COPY } from '@/lib/quality';
 import { cn } from '@/lib/utils';
 
-const STATUS_COPY: Record<JobStatus, { label: string; variant: BadgeProps['variant'] }> = {
-  pending: { label: 'En attente', variant: 'outline' },
-  processing: { label: 'Conversion…', variant: 'accent' },
-  done: { label: 'Terminé', variant: 'success' },
-  failed: { label: 'Échec', variant: 'destructive' },
+const QUALITY_DOT: Record<QualityLevel, string> = {
+  high: 'var(--success)',
+  medium: 'var(--accent)',
+  low: 'var(--destructive)',
 };
 
 export default function JobDetailPage() {
@@ -36,6 +44,7 @@ export default function JobDetailPage() {
   const doneFiles = (job.data?.files ?? []).filter((f) => f.output_path);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const activeId = selectedId ?? doneFiles[0]?.id ?? null;
+  const activeFile = job.data?.files.find((f) => f.id === activeId) ?? null;
   const titleFile = job.data?.files[0];
 
   return (
@@ -92,8 +101,8 @@ export default function JobDetailPage() {
                 <span className="text-[10px] uppercase tracking-widest text-[var(--muted-foreground)]/70">
                   Statut
                 </span>
-                <Badge variant={STATUS_COPY[job.data.status].variant}>
-                  {STATUS_COPY[job.data.status].label}
+                <Badge variant={JOB_STATUS_COPY[job.data.status].variant}>
+                  {JOB_STATUS_COPY[job.data.status].label}
                 </Badge>
               </div>
               <dl className="space-y-2 text-xs">
@@ -120,16 +129,18 @@ export default function JobDetailPage() {
                   {job.data.error_message}
                 </p>
               )}
-              {doneFiles.length > 1 && job.data.status === 'done' && (
-                <a
-                  href={jobDownloadUrl(job.data.id)}
-                  download
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] px-4 py-2 text-xs font-medium transition-colors hover:bg-[var(--muted)]"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Télécharger tout (.zip)
-                </a>
-              )}
+              {doneFiles.length > 1 &&
+                (job.data.status === 'done' ||
+                  job.data.status === 'partial_success') && (
+                  <a
+                    href={jobDownloadUrl(job.data.id)}
+                    download
+                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] px-4 py-2 text-xs font-medium transition-colors hover:bg-[var(--muted)]"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Télécharger tout (.zip)
+                  </a>
+                )}
             </section>
 
             <FileList
@@ -139,7 +150,8 @@ export default function JobDetailPage() {
             />
           </aside>
 
-          <article>
+          <article className="space-y-4">
+            {activeFile && <QualityPanel file={activeFile} />}
             {activeId ? (
               <FilePreview fileId={activeId} />
             ) : (
@@ -149,6 +161,44 @@ export default function JobDetailPage() {
         </div>
       )}
     </main>
+  );
+}
+
+function QualityPanel({ file }: { file: FileRead }) {
+  const quality = file.quality_level ? QUALITY_COPY[file.quality_level] : null;
+  const warnings = file.warnings ?? [];
+  if (!quality && warnings.length === 0) return null;
+
+  return (
+    <section className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase tracking-widest text-[var(--muted-foreground)]/70">
+          Qualité
+        </span>
+        {quality && <Badge variant={quality.variant}>{quality.label}</Badge>}
+        {file.quality_score != null && (
+          <span className="font-mono text-[10px] text-[var(--muted-foreground)]">
+            {Math.round(file.quality_score * 100)}/100
+          </span>
+        )}
+      </div>
+      {warnings.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {warnings.map((warning, i) => (
+            <li
+              key={i}
+              className="flex items-start gap-2 text-xs text-[var(--muted-foreground)]"
+            >
+              <AlertTriangle
+                className="mt-0.5 h-3 w-3 shrink-0 text-[var(--accent)]"
+                aria-hidden
+              />
+              <span>{warning}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -188,12 +238,14 @@ function FileList({
       <ul className="space-y-1.5">
         {files.map((file) => {
           const isActive = file.id === activeId;
-          const ready = !!file.output_path;
+          const ready = file.status === 'done';
+          const failed = file.status === 'failed';
           return (
             <li key={file.id}>
               <button
                 onClick={() => ready && onSelect(file.id)}
                 disabled={!ready}
+                title={failed ? (file.error_message ?? undefined) : undefined}
                 className={cn(
                   'flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-xs transition-colors',
                   isActive && 'bg-[var(--muted)]',
@@ -202,10 +254,25 @@ function FileList({
                     : 'cursor-not-allowed opacity-50',
                 )}
               >
-                <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                {failed ? (
+                  <AlertTriangle
+                    className="h-3.5 w-3.5 shrink-0 text-[var(--destructive)]"
+                    aria-hidden
+                  />
+                ) : (
+                  <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                )}
                 <span className="min-w-0 flex-1 truncate">
                   {file.original_filename}
                 </span>
+                {ready && file.quality_level && (
+                  <span
+                    aria-hidden
+                    title={QUALITY_COPY[file.quality_level].label}
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: QUALITY_DOT[file.quality_level] }}
+                  />
+                )}
                 {file.size_bytes && (
                   <span className="font-mono shrink-0 text-[10px] text-[var(--muted-foreground)]">
                     {formatBytes(file.size_bytes)}

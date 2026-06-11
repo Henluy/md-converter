@@ -5,17 +5,11 @@ import { Check, FileText, Loader2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 
 import { DeleteJobDialog } from '@/components/jobs/delete-job-dialog';
-import { Badge, type BadgeProps } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import type { JobRead, JobStatus } from '@/lib/api-client';
 import { formatBytes } from '@/lib/format';
+import { JOB_STATUS_COPY } from '@/lib/quality';
 import { cn } from '@/lib/utils';
-
-const STATUS_COPY: Record<JobStatus, { label: string; variant: BadgeProps['variant'] }> = {
-  pending: { label: 'En attente', variant: 'outline' },
-  processing: { label: 'Conversion…', variant: 'accent' },
-  done: { label: 'Terminé', variant: 'success' },
-  failed: { label: 'Échec', variant: 'destructive' },
-};
 
 function StatusIcon({ status }: { status: JobStatus }) {
   if (status === 'processing') {
@@ -32,7 +26,7 @@ function StatusIcon({ status }: { status: JobStatus }) {
       </motion.span>
     );
   }
-  if (status === 'failed') {
+  if (status === 'failed' || status === 'partial_success') {
     return <AlertTriangle className="h-3 w-3" aria-hidden />;
   }
   return null;
@@ -52,7 +46,7 @@ export interface JobCardProps {
 }
 
 export function JobCard({ job }: JobCardProps) {
-  const status = STATUS_COPY[job.status];
+  const status = JOB_STATUS_COPY[job.status];
   const titleFile = job.files[0];
   const extra = Math.max(0, job.files.length - 1);
   const totalBytes = job.files.reduce((sum, f) => sum + (f.size_bytes ?? 0), 0);
@@ -132,11 +126,12 @@ export function JobCard({ job }: JobCardProps) {
         />
       </dl>
 
-      {job.status === 'failed' && job.error_message && (
-        <p className="relative z-10 mt-4 truncate rounded-[var(--radius-sm)] bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)] px-3 py-2 text-xs text-[var(--destructive)]">
-          {job.error_message}
-        </p>
-      )}
+      {(job.status === 'failed' || job.status === 'partial_success') &&
+        job.error_message && (
+          <p className="relative z-10 mt-4 truncate rounded-[var(--radius-sm)] bg-[color-mix(in_oklch,var(--destructive)_10%,transparent)] px-3 py-2 text-xs text-[var(--destructive)]">
+            {job.error_message}
+          </p>
+        )}
     </motion.article>
   );
 }

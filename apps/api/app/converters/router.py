@@ -38,7 +38,7 @@ class TargetFormat(StrEnum):
 DEFAULT_BY_FORMAT: dict[TargetFormat, str] = {
     TargetFormat.epub: "pandoc",
     TargetFormat.pdf_native: "pymupdf",
-    TargetFormat.pdf_scanned: "marker",
+    TargetFormat.pdf_scanned: "ocr",
     TargetFormat.docx: "markitdown",
     TargetFormat.html: "markitdown",
     TargetFormat.txt: "markitdown",

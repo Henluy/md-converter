@@ -32,10 +32,15 @@ class FileRead(BaseModel):
     job_id: UUID
     original_filename: str
     original_format: str
+    status: Literal["pending", "processing", "done", "failed"] = "pending"
     converter_used: str | None = None
     output_path: str | None = None
     size_bytes: int | None = Field(default=None, ge=0)
     pages: int | None = Field(default=None, ge=0)
+    error_message: str | None = None
+    warnings: list[str] | None = None
+    quality_score: float | None = Field(default=None, ge=0, le=1)
+    quality_level: Literal["high", "medium", "low"] | None = None
     created_at: datetime | None
 
 
@@ -43,7 +48,7 @@ class JobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    status: Literal["pending", "processing", "done", "failed"]
+    status: Literal["pending", "processing", "done", "failed", "partial_success"]
     created_at: datetime | None
     completed_at: datetime | None
     error_message: str | None = None

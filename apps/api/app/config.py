@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     celery_task_soft_time_limit: int = 300
     celery_task_time_limit: int = 360
 
+    # --- Conversion ------------------------------------------------------
+    # OCR for scanned PDFs is opt-in: it's slow and needs the ocrmypdf /
+    # tesseract system binaries. When off, scanned PDFs fail with a clear
+    # "OCR is disabled" message instead of being silently dropped.
+    enable_ocr: bool = False
+    ocr_language: str = "eng"
+
     # --- Security --------------------------------------------------------
     cors_origins: str = "http://localhost:3000"
     rate_limit_per_minute: int = 60

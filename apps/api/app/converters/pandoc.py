@@ -13,7 +13,12 @@ import time
 import uuid
 from pathlib import Path
 
-from app.converters.base import BaseConverter, ConversionResult, sanitise_filename
+from app.converters.base import (
+    BaseConverter,
+    ConversionResult,
+    sanitise_filename,
+    write_cleaned_markdown,
+)
 from app.converters.errors import (
     ConversionError,
     ConverterUnavailableError,
@@ -111,9 +116,13 @@ class PandocConverter(BaseConverter):
                 stderr=completed.stderr,
             )
 
-        warnings = [
-            line for line in completed.stderr.splitlines() if line.strip()
-        ]
+        # Pandoc wrote the raw markdown; now re-read, clean (strip HTML
+        # residue, rewrite image paths, etc.) and rename the media folder
+        # to match the rewritten references.
+        raw = output_path.read_text(encoding="utf-8")
+        write_cleaned_markdown(output_path, raw, media_dir=media_dir)
+
+        warnings = [line for line in completed.stderr.splitlines() if line.strip()]
 
         return ConversionResult(
             output_path=output_path,

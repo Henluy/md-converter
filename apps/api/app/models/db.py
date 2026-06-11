@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -20,7 +21,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -40,13 +41,29 @@ class JobStatus(StrEnum):
     processing = "processing"
     done = "done"
     failed = "failed"
+    #: Multi-file job where some files converted and at least one failed.
+    partial_success = "partial_success"
+
+
+class FileStatus(StrEnum):
+    pending = "pending"
+    processing = "processing"
+    done = "done"
+    failed = "failed"
+
+
+class QualityLevel(StrEnum):
+    high = "high"
+    medium = "medium"
+    low = "low"
 
 
 class JobRow(Base):
     __tablename__ = "jobs"
     __table_args__ = (
         CheckConstraint(
-            "status in ('pending', 'processing', 'done', 'failed')",
+            "status in ('pending', 'processing', 'done', 'failed', "
+            "'partial_success')",
             name="jobs_status_valid",
         ),
         Index("jobs_status_idx", "status"),
@@ -92,7 +109,13 @@ class JobRow(Base):
 
 class FileRow(Base):
     __tablename__ = "files"
-    __table_args__ = (Index("files_job_id_idx", "job_id"),)
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('pending', 'processing', 'done', 'failed')",
+            name="files_status_valid",
+        ),
+        Index("files_job_id_idx", "job_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
@@ -113,6 +136,19 @@ class FileRow(Base):
     converter_used: Mapped[str | None] = mapped_column(String, default=None)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, default=None)
     pages: Mapped[int | None] = mapped_column(Integer, default=None)
+    # Per-file lifecycle — lets a multi-file job report partial success and
+    # surface exactly which file failed and why.
+    status: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        server_default="pending",
+        default="pending",
+    )
+    error_message: Mapped[str | None] = mapped_column(String, default=None)
+    # Conversion-quality signals (see app.processors.quality).
+    warnings: Mapped[list[str] | None] = mapped_column(JSONB, default=None)
+    quality_score: Mapped[float | None] = mapped_column(Float, default=None)
+    quality_level: Mapped[str | None] = mapped_column(String, default=None)
     created_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True),
         server_default=func.now(),

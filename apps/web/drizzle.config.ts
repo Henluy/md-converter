@@ -1,4 +1,15 @@
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'drizzle-kit';
+
+// Load the repo-root .env so drizzle-kit (generate/check/studio) sees
+// DATABASE_URL without it being exported in the shell.
+const rootEnv = resolve(dirname(fileURLToPath(import.meta.url)), '../../.env');
+if (!process.env['DATABASE_URL'] && existsSync(rootEnv)) {
+  process.loadEnvFile(rootEnv);
+}
 
 const databaseUrl = process.env['DATABASE_URL'];
 
