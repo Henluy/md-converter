@@ -262,6 +262,11 @@ def recompute_job_status(session: Session, job_id: UUID) -> JobStatus:
     if job is None:
         raise LookupError(f"job_id={job_id} not found")
 
+    # The session runs with autoflush disabled (see db_sync), so flush any
+    # pending per-file status changes (from complete_file/fail_file in this
+    # same transaction) before we count them — otherwise the tallies are stale.
+    session.flush()
+
     total = job.total_files or 0
     succeeded = session.scalar(
         select(func.count())
