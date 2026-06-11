@@ -55,3 +55,9 @@ htmlcov/
 # Misc
 .tmp/
 tmp/
+
+# Local tooling output / runtime data (never commit)
+graphify-out/
+apps/api/data/
+# Large local sample docs (z-library exports etc.)
+*z-lib*.md
