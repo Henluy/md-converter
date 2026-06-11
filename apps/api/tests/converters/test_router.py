@@ -10,6 +10,7 @@ from app.converters import (
     ConverterRouter,
     FormatNotSupportedError,
     MarkItDownConverter,
+    OcrPdfConverter,
     PandocConverter,
     PymuPdfConverter,
     TargetFormat,
@@ -41,14 +42,14 @@ def test_router_routes_text_pdf_to_pymupdf(text_pdf: Path) -> None:
     assert isinstance(decision.converter, PymuPdfConverter)
 
 
-def test_router_routes_scanned_pdf_to_marker_target(scanned_pdf: Path) -> None:
-    """Scanned PDFs target ``marker``; ticket 8b registers it."""
+def test_router_routes_scanned_pdf_to_ocr(scanned_pdf: Path) -> None:
+    """Scanned PDFs route to the (opt-in) OCR converter."""
     router = ConverterRouter(build_default_registry())
+    decision = router.resolve(scanned_pdf)
 
-    with pytest.raises(FormatNotSupportedError) as excinfo:
-        router.resolve(scanned_pdf)
-
-    assert "marker" in str(excinfo.value)
+    assert decision.target_format == TargetFormat.pdf_scanned
+    assert decision.converter_name == "ocr"
+    assert isinstance(decision.converter, OcrPdfConverter)
 
 
 def test_router_routes_docx_to_markitdown(docx_file: Path) -> None:
@@ -96,4 +97,4 @@ def test_router_rejects_unknown_extension(tmp_path: Path) -> None:
 
 def test_router_exposes_available_converters() -> None:
     router = ConverterRouter(build_default_registry())
-    assert router.available_converters == ["markitdown", "pandoc", "pymupdf"]
+    assert router.available_converters == ["markitdown", "ocr", "pandoc", "pymupdf"]

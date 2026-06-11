@@ -53,3 +53,27 @@ def test_missing_input_raises(tmp_path: Path) -> None:
     converter = MarkItDownConverter()
     with pytest.raises(ConversionError):
         converter.convert(tmp_path / "missing.txt", tmp_path / "out")
+
+
+def test_convert_times_out_with_clear_error(
+    tmp_path: Path, output_dir: Path
+) -> None:
+    """A hung conversion fails fast with a timeout error instead of blocking
+    the worker until Celery's soft time limit."""
+    import time
+
+    txt = tmp_path / "x.txt"
+    txt.write_text("hello", encoding="utf-8")
+
+    class _SlowEngine:
+        def convert(self, path: str) -> object:
+            time.sleep(2)
+            raise AssertionError("should have timed out before returning")
+
+    converter = MarkItDownConverter()
+    converter._timeout_seconds = 0.2  # type: ignore[assignment]
+    converter._engine = _SlowEngine()
+
+    with pytest.raises(ConversionError) as excinfo:
+        converter.convert(txt, output_dir)
+    assert "time" in str(excinfo.value).lower()

@@ -12,7 +12,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.converters.base import BaseConverter, ConversionResult, sanitise_filename
+from app.converters.base import (
+    BaseConverter,
+    ConversionResult,
+    ConverterTimeoutError,
+    run_with_timeout,
+    sanitise_filename,
+    write_cleaned_markdown,
+)
 from app.converters.errors import (
     ConversionError,
     ConverterUnavailableError,
@@ -50,9 +57,7 @@ class MarkItDownConverter(BaseConverter):
 
     def convert(self, input_path: Path, output_dir: Path) -> ConversionResult:
         if not self.supports(input_path):
-            raise FormatNotSupportedError(
-                f"{self.name} does not support {input_path.suffix!r}"
-            )
+            raise FormatNotSupportedError(f"{self.name} does not support {input_path.suffix!r}")
 
         if not input_path.exists() or not input_path.is_file():
             raise ConversionError(f"Input file not found: {input_path}")
@@ -70,7 +75,14 @@ class MarkItDownConverter(BaseConverter):
 
         started = time.monotonic()
         try:
-            result = engine.convert(str(input_path))
+            result = run_with_timeout(
+                lambda: engine.convert(str(input_path)),
+                seconds=self._timeout_seconds,
+            )
+        except ConverterTimeoutError as exc:
+            raise ConversionError(
+                f"markitdown timed out after {self._timeout_seconds}s"
+            ) from exc
         except MarkItDownException as exc:
             raise ConversionError(f"markitdown failed: {exc}") from exc
 
@@ -79,7 +91,7 @@ class MarkItDownConverter(BaseConverter):
         if not markdown:
             raise ConversionError("markitdown returned empty output")
 
-        output_path.write_text(markdown, encoding="utf-8")
+        write_cleaned_markdown(output_path, markdown)
 
         return ConversionResult(
             output_path=output_path,
