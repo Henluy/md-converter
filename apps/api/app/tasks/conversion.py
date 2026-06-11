@@ -22,6 +22,7 @@ from typing import Any
 from uuid import UUID
 
 from celery.exceptions import SoftTimeLimitExceeded
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from app.config import get_settings
 from app.converters import (
@@ -33,6 +34,7 @@ from app.converters import (
     build_default_registry,
 )
 from app.db_sync import sync_session_scope
+from app.processors import QualityAssessment, assess_quality
 from app.security import (
     FileValidationError,
     PathTraversalError,
@@ -50,6 +52,32 @@ from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
+# Transient infrastructure failures worth retrying. Deterministic conversion
+# errors (ConversionError, FormatNotSupportedError, …) are deliberately NOT
+# here — replaying them changes nothing, so they fail fast.
+RETRYABLE_ERRORS: tuple[type[Exception], ...] = (
+    OperationalError,  # DB connection dropped / server restarting
+    InterfaceError,  # DB driver-level connection failure
+    ConnectionError,  # builtin — broker/network blips
+    TimeoutError,  # builtin — socket timeouts to DB/broker
+)
+MAX_RETRIES = 3
+
+
+def _assess(input_path: Path, result: ConversionResult) -> QualityAssessment:
+    """Score the produced markdown against the source size (best effort)."""
+    try:
+        input_bytes = input_path.stat().st_size
+    except OSError:
+        input_bytes = 0
+    try:
+        markdown = result.output_path.read_text(encoding="utf-8")
+    except OSError:
+        markdown = ""
+    return assess_quality(
+        input_bytes=input_bytes, markdown=markdown, pages=result.pages
+    )
+
 
 def _result_to_payload(
     result: ConversionResult,
@@ -59,6 +87,7 @@ def _result_to_payload(
     detected_mime: str,
     file_id: str,
     job_id: str,
+    quality: QualityAssessment,
 ) -> dict[str, Any]:
     """JSON-friendly representation (Celery result backend stores JSON)."""
     return {
@@ -71,7 +100,9 @@ def _result_to_payload(
         "pages": result.pages,
         "size_bytes": result.size_bytes,
         "duration_seconds": result.duration_seconds,
-        "warnings": list(result.warnings),
+        "quality_score": quality.score,
+        "quality_level": quality.level,
+        "warnings": [*quality.warnings, *result.warnings],
     }
 
 
@@ -84,8 +115,11 @@ def _resolve_output_dir(settings_data_dir: Path, job_id: UUID) -> Path:
 @celery_app.task(  # type: ignore[untyped-decorator]
     name="md-converter.convert_file",
     bind=True,
-    autoretry_for=(),
-    max_retries=0,
+    autoretry_for=RETRYABLE_ERRORS,
+    retry_backoff=True,
+    retry_backoff_max=60,
+    retry_jitter=True,
+    max_retries=MAX_RETRIES,
     acks_late=True,
 )
 def convert_file_task(
@@ -116,6 +150,7 @@ def convert_file_task(
                 file_uuid,
                 error_message=f"PathTraversalError: {exc}",
             )
+            recompute_job_status(session, file_row.job_id)
             raise
         start_file(session, file_uuid)
 
@@ -148,9 +183,12 @@ def convert_file_task(
         logger.exception("task=%s conversion failed", self.request.id)
         with sync_session_scope() as session:
             fail_file(session, file_uuid, error_message=f"{type(exc).__name__}: {exc}")
+            recompute_job_status(session, job_uuid)
         raise
 
-    # ---- 3. Persist success --------------------------------------------
+    # ---- 3. Assess quality + persist success ---------------------------
+    quality = _assess(input_path, result)
+
     output_relative = str(result.output_path.relative_to(settings.data_dir))
     with sync_session_scope() as session:
         complete_file(
@@ -159,6 +197,7 @@ def convert_file_task(
             result,
             converter_name=decision.converter_name,
             output_relative_path=output_relative,
+            quality=quality,
         )
         recompute_job_status(session, job_uuid)
 
@@ -173,4 +212,5 @@ def convert_file_task(
         detected_mime=detected.mime_type,
         file_id=str(file_uuid),
         job_id=str(job_uuid),
+        quality=quality,
     )

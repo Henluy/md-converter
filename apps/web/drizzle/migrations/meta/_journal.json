@@ -8,6 +8,13 @@
       "when": 1778522376836,
       "tag": "0000_great_cloak",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781136245923,
+      "tag": "0001_dashing_champions",
+      "breakpoints": true
     }
   ]
 }

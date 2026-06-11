@@ -136,6 +136,13 @@ def test_task_failed_file_marks_job_failed(
     db_session_sync.expire_all()
     refreshed = get_job(db_session_sync, job.id)
     assert refreshed is not None
+    # Single-file job, that file failed → the whole job is failed.
     assert refreshed.status == JobStatus.failed.value
-    assert refreshed.error_message is not None
-    assert "MimeTypeMismatch" in refreshed.error_message
+    assert refreshed.completed_at is not None
+
+    # The detailed reason now lives on the file row (per-file error tracking).
+    file_after = get_file(db_session_sync, file_id)
+    assert file_after is not None
+    assert file_after.status == "failed"
+    assert file_after.error_message is not None
+    assert "MimeTypeMismatch" in file_after.error_message
