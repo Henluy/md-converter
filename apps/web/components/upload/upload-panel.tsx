@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -9,15 +10,19 @@ import { StagedFiles } from '@/components/upload/staged-files';
 import { useCreateJob } from '@/lib/hooks/use-create-job';
 
 export function UploadPanel() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [staged, setStaged] = useState<File[]>([]);
   const createJob = useCreateJob({
     onSuccess: (job) => {
-      toast.success('Job créé', {
-        description: `${job.total_files} fichier${job.total_files > 1 ? 's' : ''} en file d’attente.`,
+      toast.success('Conversion lancée', {
+        description: 'Suivez la progression et consultez le résultat ici.',
       });
       setStaged([]);
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      // Land on the job page so the user watches it convert and reads the
+      // final markdown inline, instead of hunting for it in the list.
+      router.push(`/jobs/${job.id}`);
     },
     onError: (error) => {
       toast.error('Échec de l’upload', {
