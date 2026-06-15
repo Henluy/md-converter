@@ -2,8 +2,8 @@
 
 import {
   AlertTriangle,
-  ArrowLeft,
   BookOpen,
+  ChevronRight,
   Download,
   FileText,
   Loader2,
@@ -71,13 +71,28 @@ export default function JobDetailPage() {
       </header>
 
       <div className="mt-6 mb-4 flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+        <nav
+          aria-label="Fil d'Ariane"
+          className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--muted-foreground)]"
         >
-          <ArrowLeft className="h-3 w-3" />
-          Tous les jobs
-        </Link>
+          <Link
+            href="/"
+            className="shrink-0 transition-colors hover:text-[var(--foreground)]"
+          >
+            Accueil
+          </Link>
+          <ChevronRight className="h-3 w-3 shrink-0 opacity-50" aria-hidden />
+          <Link
+            href="/history"
+            className="shrink-0 transition-colors hover:text-[var(--foreground)]"
+          >
+            Jobs
+          </Link>
+          <ChevronRight className="h-3 w-3 shrink-0 opacity-50" aria-hidden />
+          <span className="truncate text-[var(--foreground)]" aria-current="page">
+            {titleFile?.original_filename ?? '…'}
+          </span>
+        </nav>
         {job.data && (
           <DeleteJobDialog
             jobId={job.data.id}
