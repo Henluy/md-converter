@@ -26,7 +26,7 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -47,7 +47,7 @@ jobs:
     name: Repo lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check .env is not committed
         run: |
@@ -76,7 +76,7 @@ jobs:
     if: ${{ needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Version comes from package.json "packageManager" (avoids the
       # action erroring on a duplicate version specification).
@@ -139,7 +139,7 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install system deps (pandoc, libmagic)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc libmagic1
