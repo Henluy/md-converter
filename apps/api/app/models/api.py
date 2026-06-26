@@ -49,6 +49,7 @@ class JobRead(BaseModel):
 
     id: UUID
     status: Literal["pending", "processing", "done", "failed", "partial_success"]
+    target_format: Literal["markdown", "pdf", "docx", "epub"] = "markdown"
     created_at: datetime | None
     completed_at: datetime | None
     error_message: str | None = None

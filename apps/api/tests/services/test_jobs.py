@@ -53,6 +53,27 @@ def test_create_job_persists_rows(db_session_sync: Session) -> None:
     assert fetched.total_files == 2
 
 
+def test_create_job_defaults_to_markdown_import(db_session_sync: Session) -> None:
+    job = create_job(db_session_sync, [_spec()])
+    assert job.target_format == "markdown"
+
+
+def test_create_job_persists_export_target(db_session_sync: Session) -> None:
+    spec = NewFileSpec(
+        original_filename="rapport.md",
+        stored_filename=f"{uuid4().hex}_rapport.md",
+        original_format=".md",
+        storage_path=f"input/{uuid4().hex}_rapport.md",
+        size_bytes=500,
+    )
+    job = create_job(db_session_sync, [spec], target_format="pdf")
+    assert job.target_format == "pdf"
+
+    fetched = get_job(db_session_sync, job.id)
+    assert fetched is not None
+    assert fetched.target_format == "pdf"
+
+
 def test_create_job_rejects_empty_files(db_session_sync: Session) -> None:
     with pytest.raises(ValueError):
         create_job(db_session_sync, [])

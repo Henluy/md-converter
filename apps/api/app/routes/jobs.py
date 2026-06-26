@@ -16,10 +16,11 @@ import zipfile
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.config import get_settings
+from app.converters import OutputFormat
 from app.converters.base import sanitise_filename
 from app.db_sync import sync_session_scope
 from app.models.api import FileRead, JobRead
@@ -31,6 +32,7 @@ from app.security import (
     PathTraversalError,
     UnsupportedExtensionError,
     safe_resolve_relative,
+    validate_markdown_input,
     validate_upload,
 )
 from app.services import (
@@ -53,6 +55,7 @@ def _job_to_read(job: JobRow) -> JobRead:
     return JobRead(
         id=job.id,
         status=job.status,
+        target_format=job.target_format,
         created_at=job.created_at,
         completed_at=job.completed_at,
         error_message=job.error_message,
@@ -125,6 +128,10 @@ async def create_job_route(
     files: list[UploadFile] = File(  # noqa: B008 — FastAPI dependency-injected default
         ..., description="Up to 50 files (max 100 MB each).",
     ),
+    target_format: str = Form(
+        "markdown",
+        description="Output format: markdown (import, default), pdf, docx or epub (export).",
+    ),
 ) -> JobRead:
     settings = get_settings()
     if not files:
@@ -134,6 +141,18 @@ async def create_job_route(
             status.HTTP_400_BAD_REQUEST,
             f"too many files: {len(files)} > max_files_per_job={settings.max_files_per_job}",
         )
+
+    valid_targets = {fmt.value for fmt in OutputFormat}
+    if target_format not in valid_targets:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"invalid target_format {target_format!r}; expected one of "
+            f"{sorted(valid_targets)}",
+        )
+    # markdown = import (document → markdown); the rest = export (markdown → X),
+    # which flips the accepted input to markdown.
+    is_export = target_format != OutputFormat.markdown.value
+    validate = validate_markdown_input if is_export else validate_upload
 
     data_dir = settings.data_dir
     max_bytes_per_file = settings.max_file_size_mb * 1024 * 1024
@@ -148,7 +167,7 @@ async def create_job_route(
             )
             staged_paths.append(absolute)
             try:
-                detected = validate_upload(absolute, max_file_size_mb=settings.max_file_size_mb)
+                detected = validate(absolute, max_file_size_mb=settings.max_file_size_mb)
             except (
                 UnsupportedExtensionError,
                 MimeTypeMismatchError,
@@ -179,7 +198,7 @@ async def create_job_route(
     job_id: UUID
     try:
         with sync_session_scope() as session:
-            job = create_job(session, specs)
+            job = create_job(session, specs, target_format=target_format)
             job_id = job.id
             response = _job_to_read(job)
             file_ids = [f.id for f in job.files]
@@ -296,11 +315,13 @@ async def download_job_zip_route(job_id: UUID) -> StreamingResponse:
             if not absolute.exists() or not absolute.is_file():
                 continue
             stem = sanitise_filename(Path(f.original_filename).stem)
-            name = f"{stem}.md"
+            # Use the real output extension so exports zip as .pdf/.docx/.epub.
+            ext = Path(f.output_path).suffix or ".md"
+            name = f"{stem}{ext}"
             n = 1
             while name in seen_names:
                 n += 1
-                name = f"{stem}-{n}.md"
+                name = f"{stem}-{n}{ext}"
             seen_names.add(name)
             resolved.append((name, absolute))
 

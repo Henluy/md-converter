@@ -44,12 +44,21 @@ class NewFileSpec:
 # ---------------------------------------------------------------------------
 
 
-def create_job(session: Session, files: list[NewFileSpec]) -> JobRow:
+def create_job(
+    session: Session,
+    files: list[NewFileSpec],
+    *,
+    target_format: str = "markdown",
+) -> JobRow:
     """Persist a new job and its file rows in a single transaction.
 
     Enforces BRIEF §10 batch limits before any row is written:
       - ``max_files_per_job``
       - ``max_job_size_mb`` (sum of ``size_bytes`` for files that provided one)
+
+    ``target_format`` is the conversion direction: ``markdown`` (default)
+    imports a document → markdown; ``pdf``/``docx``/``epub`` export an
+    uploaded markdown file to that format.
 
     Returns the job row (with its UUID populated and the FileRow children
     accessible via ``job.files`` after a refresh).
@@ -74,6 +83,7 @@ def create_job(session: Session, files: list[NewFileSpec]) -> JobRow:
 
     job = JobRow(
         status=JobStatus.pending.value,
+        target_format=target_format,
         total_files=len(files),
         processed_files=0,
     )

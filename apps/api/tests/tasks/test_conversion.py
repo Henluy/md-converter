@@ -94,6 +94,53 @@ def test_task_full_pipeline_epub(
     assert file_after.output_path.startswith(f"output/{job.id}")
 
 
+@pytest.mark.usefixtures("skip_if_no_pandoc")
+def test_task_full_pipeline_export_docx(
+    db_session_sync: Session,
+    override_data_dir: Path,
+    markdown_file: Path,
+) -> None:
+    """Reverse direction: a markdown upload exported to DOCX."""
+    staged, relative = _stage(override_data_dir, markdown_file)
+
+    job = create_job(
+        db_session_sync,
+        [
+            NewFileSpec(
+                original_filename=markdown_file.name,
+                stored_filename=staged.name,
+                original_format=".md",
+                storage_path=relative,
+                size_bytes=staged.stat().st_size,
+            )
+        ],
+        target_format="docx",
+    )
+    db_session_sync.commit()
+    file_id = job.files[0].id
+
+    result = convert_file_task.apply(kwargs={"file_id": str(file_id)})
+    assert result.successful()
+    payload = result.result
+
+    assert payload["converter"] == "export-docx"
+    assert payload["target_format"] == "docx"
+    # Export produces a binary file, not markdown — no quality score.
+    assert payload["quality_score"] is None
+    assert payload["quality_level"] is None
+
+    db_session_sync.expire_all()
+    refreshed = get_job(db_session_sync, job.id)
+    assert refreshed is not None
+    assert refreshed.status == JobStatus.done.value
+
+    file_after = get_file(db_session_sync, file_id)
+    assert file_after is not None
+    assert file_after.converter_used == "export-docx"
+    assert file_after.output_path is not None
+    assert file_after.output_path.endswith(".docx")
+
+
 def test_task_unknown_file_id_raises(
     db_session_sync: Session,
     override_data_dir: Path,

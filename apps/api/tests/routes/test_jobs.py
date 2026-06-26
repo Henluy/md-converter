@@ -49,6 +49,64 @@ async def test_post_jobs_creates_job_and_persists_files(
     assert payload["files"][0]["original_filename"] == epub_file.name
 
 
+@pytest.mark.usefixtures("db_session_sync", "override_data_dir", "skip_if_no_pandoc")
+async def test_post_jobs_export_markdown_to_docx(
+    client: AsyncClient,
+    markdown_file: Path,
+) -> None:
+    """Reverse direction: a markdown upload + target_format=docx → DOCX job."""
+    with markdown_file.open("rb") as fh:
+        response = await client.post(
+            "/api/jobs",
+            files={"files": (markdown_file.name, fh.read(), "text/markdown")},
+            data={"target_format": "docx"},
+        )
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["target_format"] == "docx"
+    assert payload["total_files"] == 1
+
+    # The eager task has run by now — GET shows the converted .docx output.
+    job_id = payload["id"]
+    got = await client.get(f"/api/jobs/{job_id}")
+    assert got.status_code == 200
+    file0 = got.json()["files"][0]
+    assert file0["status"] == "done"
+    assert file0["converter_used"] == "export-docx"
+    assert file0["output_path"].endswith(".docx")
+
+
+@pytest.mark.usefixtures("db_session_sync", "override_data_dir")
+async def test_post_jobs_export_rejects_non_markdown_input(
+    client: AsyncClient,
+    epub_file: Path,
+) -> None:
+    """Exporting requires markdown input — an EPUB upload is rejected."""
+    with epub_file.open("rb") as fh:
+        response = await client.post(
+            "/api/jobs",
+            files={"files": (epub_file.name, fh.read(), "application/epub+zip")},
+            data={"target_format": "pdf"},
+        )
+    assert response.status_code == 400
+    assert "extension" in response.json()["detail"].lower()
+
+
+@pytest.mark.usefixtures("db_session_sync", "override_data_dir")
+async def test_post_jobs_rejects_invalid_target_format(
+    client: AsyncClient,
+    markdown_file: Path,
+) -> None:
+    with markdown_file.open("rb") as fh:
+        response = await client.post(
+            "/api/jobs",
+            files={"files": (markdown_file.name, fh.read(), "text/markdown")},
+            data={"target_format": "banana"},
+        )
+    assert response.status_code == 400
+    assert "target_format" in response.json()["detail"].lower()
+
+
 @pytest.mark.usefixtures("db_session_sync", "override_data_dir")
 async def test_post_jobs_rejects_unsupported_extension(
     client: AsyncClient,
