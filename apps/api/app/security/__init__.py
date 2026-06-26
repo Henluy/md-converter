@@ -8,6 +8,7 @@ from app.security.validation import (
     MimeTypeMismatchError,
     UnsupportedExtensionError,
     detect_format,
+    validate_markdown_input,
     validate_upload,
 )
 
@@ -20,5 +21,6 @@ __all__ = [
     "UnsupportedExtensionError",
     "detect_format",
     "safe_resolve_relative",
+    "validate_markdown_input",
     "validate_upload",
 ]

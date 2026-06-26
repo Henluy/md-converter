@@ -12,6 +12,7 @@ from app.security import (
     MimeTypeMismatchError,
     UnsupportedExtensionError,
     detect_format,
+    validate_markdown_input,
     validate_upload,
 )
 
@@ -67,3 +68,30 @@ def test_validate_passes_within_limit(tmp_path: Path) -> None:
     pdf = _make_file(tmp_path / "doc.pdf", _PDF_BYTES)
     detected = validate_upload(pdf, max_file_size_mb=10)
     assert detected.extension == ".pdf"
+
+
+# --- Markdown input (export direction: markdown → PDF/DOCX/EPUB) -----------
+
+
+def test_validate_markdown_input_accepts_md(markdown_file: Path) -> None:
+    detected = validate_markdown_input(markdown_file)
+    assert detected.extension == ".md"
+    assert detected.mime_type == "text/plain"
+
+
+def test_validate_markdown_input_accepts_markdown_extension(tmp_path: Path) -> None:
+    doc = _make_file(tmp_path / "note.markdown", b"# Title\n\nbody\n")
+    detected = validate_markdown_input(doc)
+    assert detected.extension == ".markdown"
+
+
+def test_validate_markdown_input_rejects_documents(tmp_path: Path) -> None:
+    pdf = _make_file(tmp_path / "doc.pdf", _PDF_BYTES)
+    with pytest.raises(UnsupportedExtensionError):
+        validate_markdown_input(pdf)
+
+
+def test_default_upload_rejects_markdown(markdown_file: Path) -> None:
+    # The import path (document → markdown) must NOT accept a .md upload.
+    with pytest.raises(UnsupportedExtensionError):
+        validate_upload(markdown_file)

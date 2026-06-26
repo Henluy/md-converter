@@ -68,6 +68,9 @@ _LENIENT_MIME_EQUIVALENCES: dict[str, frozenset[str]] = {
     ".txt": frozenset({"text/plain"}),
     ".html": frozenset({"text/html", "application/xhtml+xml"}),
     ".pdf": frozenset({"application/pdf"}),
+    # Markdown input (export direction) — libmagic sniffs it as plain text.
+    ".md": frozenset({"text/plain", "text/markdown", "text/x-markdown"}),
+    ".markdown": frozenset({"text/plain", "text/markdown", "text/x-markdown"}),
 }
 
 _MAGIC = magic.Magic(mime=True)
@@ -146,3 +149,23 @@ def validate_upload(
         )
 
     return detected
+
+
+def validate_markdown_input(
+    input_path: Path,
+    *,
+    max_file_size_mb: int | None = None,
+) -> DetectedFormat:
+    """Validate a markdown upload for the export direction (markdown → X).
+
+    Same extension/MIME/size pipeline as :func:`validate_upload`, but against
+    the markdown-input whitelist (``.md``/``.markdown``) instead of the
+    document whitelist used when importing *to* markdown.
+    """
+    settings = get_settings()
+    return validate_upload(
+        input_path,
+        max_file_size_mb=max_file_size_mb,
+        allowed_extensions=settings.export_input_extensions_set,
+        allowed_mime_types=settings.export_input_mime_types_set,
+    )
