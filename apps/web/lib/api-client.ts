@@ -12,6 +12,8 @@ export const API_BASE_URL =
 export const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
 export const MAX_FILES_PER_JOB = 50;
 export const ALLOWED_EXTENSIONS = ['.epub', '.pdf', '.docx', '.html', '.txt'] as const;
+// Accepted input when exporting (markdown → PDF/DOCX/EPUB).
+export const EXPORT_INPUT_EXTENSIONS = ['.md', '.markdown'] as const;
 
 export type AllowedExtension = (typeof ALLOWED_EXTENSIONS)[number];
 export type JobStatus =
@@ -22,6 +24,11 @@ export type JobStatus =
   | 'partial_success';
 export type FileStatus = 'pending' | 'processing' | 'done' | 'failed';
 export type QualityLevel = 'high' | 'medium' | 'low';
+
+// Conversion direction. 'markdown' imports a document → markdown (default);
+// the rest export an uploaded markdown file to that format.
+export const TARGET_FORMATS = ['markdown', 'pdf', 'docx', 'epub'] as const;
+export type TargetFormat = (typeof TARGET_FORMATS)[number];
 
 export interface FileRead {
   id: string;
@@ -43,6 +50,7 @@ export interface FileRead {
 export interface JobRead {
   id: string;
   status: JobStatus;
+  target_format: TargetFormat;
   created_at: string | null;
   completed_at: string | null;
   error_message: string | null;
@@ -82,11 +90,15 @@ export function jobDownloadUrl(jobId: string): string {
 }
 
 export const api = {
-  async createJob(files: File[]): Promise<JobRead> {
+  async createJob(
+    files: File[],
+    targetFormat: TargetFormat = 'markdown',
+  ): Promise<JobRead> {
     const body = new FormData();
     for (const file of files) {
       body.append('files', file, file.name);
     }
+    body.append('target_format', targetFormat);
     const response = await fetch(`${API_BASE_URL}/api/jobs`, {
       method: 'POST',
       body,
