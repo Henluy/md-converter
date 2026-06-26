@@ -26,11 +26,13 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 
 from app.config import get_settings
 from app.converters import (
+    BaseConverter,
     ConversionError,
     ConversionResult,
     ConverterRouter,
     ConverterUnavailableError,
     FormatNotSupportedError,
+    OutputFormat,
     build_default_registry,
 )
 from app.db_sync import sync_session_scope
@@ -39,12 +41,14 @@ from app.security import (
     FileValidationError,
     PathTraversalError,
     safe_resolve_relative,
+    validate_markdown_input,
     validate_upload,
 )
 from app.services import (
     complete_file,
     fail_file,
     get_file,
+    get_job,
     recompute_job_status,
     start_file,
 )
@@ -87,9 +91,10 @@ def _result_to_payload(
     detected_mime: str,
     file_id: str,
     job_id: str,
-    quality: QualityAssessment,
+    quality: QualityAssessment | None,
 ) -> dict[str, Any]:
     """JSON-friendly representation (Celery result backend stores JSON)."""
+    warnings = list(quality.warnings) if quality else []
     return {
         "file_id": file_id,
         "job_id": job_id,
@@ -100,10 +105,23 @@ def _result_to_payload(
         "pages": result.pages,
         "size_bytes": result.size_bytes,
         "duration_seconds": result.duration_seconds,
-        "quality_score": quality.score,
-        "quality_level": quality.level,
-        "warnings": [*quality.warnings, *result.warnings],
+        "quality_score": quality.score if quality else None,
+        "quality_level": quality.level if quality else None,
+        "warnings": [*warnings, *result.warnings],
     }
+
+
+def _resolve_export_converter(
+    registry: dict[str, BaseConverter], target_format: str
+) -> tuple[BaseConverter, str]:
+    """Pick the export converter for a job's target_format (markdown → X)."""
+    name = f"export-{target_format}"
+    converter = registry.get(name)
+    if converter is None:
+        raise FormatNotSupportedError(
+            f"unsupported export target {target_format!r}"
+        )
+    return converter, name
 
 
 def _resolve_output_dir(settings_data_dir: Path, job_id: UUID) -> Path:
@@ -133,6 +151,7 @@ def convert_file_task(
     file_uuid = UUID(file_id)
     job_uuid: UUID | None = None
     input_path: Path | None = None
+    target_format: str = OutputFormat.markdown.value
 
     # ---- 1. Load file row + mark job processing ------------------------
     with sync_session_scope() as session:
@@ -140,6 +159,9 @@ def convert_file_task(
         if file_row is None:
             raise LookupError(f"file_id={file_id} not found")
         job_uuid = file_row.job_id
+        job_row = get_job(session, job_uuid)
+        if job_row is not None:
+            target_format = job_row.target_format
         try:
             input_path = safe_resolve_relative(
                 settings.data_dir, file_row.storage_path
@@ -163,14 +185,30 @@ def convert_file_task(
     )
 
     output_dir = _resolve_output_dir(settings.data_dir, job_uuid)
+    is_export = target_format != OutputFormat.markdown.value
 
     # ---- 2. Validate + route + convert ---------------------------------
     try:
-        detected = validate_upload(input_path)
-        router = ConverterRouter(build_default_registry())
-        decision = router.resolve(input_path, override=override)
+        registry = build_default_registry()
+        if is_export:
+            # Reverse direction: a markdown upload → PDF/DOCX/EPUB. The
+            # converter is keyed by the job's target_format, not by input
+            # routing.
+            detected = validate_markdown_input(input_path)
+            converter, converter_name = _resolve_export_converter(
+                registry, target_format
+            )
+            conversion_label = target_format
+        else:
+            detected = validate_upload(input_path)
+            decision = ConverterRouter(registry).resolve(
+                input_path, override=override
+            )
+            converter = decision.converter
+            converter_name = decision.converter_name
+            conversion_label = str(decision.target_format)
         try:
-            result = decision.converter.convert(input_path, output_dir)
+            result = converter.convert(input_path, output_dir)
         except SoftTimeLimitExceeded as exc:
             raise ConversionError("Converter exceeded the soft time limit") from exc
     except (
@@ -187,7 +225,9 @@ def convert_file_task(
         raise
 
     # ---- 3. Assess quality + persist success ---------------------------
-    quality = _assess(input_path, result)
+    # Quality scoring is markdown-specific; for export the output is a binary
+    # document, so we skip it.
+    quality = None if is_export else _assess(input_path, result)
 
     output_relative = str(result.output_path.relative_to(settings.data_dir))
     with sync_session_scope() as session:
@@ -195,7 +235,7 @@ def convert_file_task(
             session,
             file_uuid,
             result,
-            converter_name=decision.converter_name,
+            converter_name=converter_name,
             output_relative_path=output_relative,
             quality=quality,
         )
@@ -207,8 +247,8 @@ def convert_file_task(
     )
     return _result_to_payload(
         result,
-        converter_name=decision.converter_name,
-        target_format=str(decision.target_format),
+        converter_name=converter_name,
+        target_format=conversion_label,
         detected_mime=detected.mime_type,
         file_id=str(file_uuid),
         job_id=str(job_uuid),

@@ -7,12 +7,14 @@ import { useDropzone } from 'react-dropzone';
 
 import {
   ALLOWED_EXTENSIONS,
+  EXPORT_INPUT_EXTENSIONS,
   MAX_FILE_SIZE_BYTES,
   MAX_FILES_PER_JOB,
+  type TargetFormat,
 } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
-const ACCEPT: Record<string, string[]> = {
+const IMPORT_ACCEPT: Record<string, string[]> = {
   'application/epub+zip': ['.epub'],
   'application/pdf': ['.pdf'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
@@ -20,14 +22,52 @@ const ACCEPT: Record<string, string[]> = {
   'text/plain': ['.txt'],
 };
 
+// Browsers often report .md with an empty/`text/plain` MIME, so react-dropzone
+// falls back to extension matching here.
+const EXPORT_ACCEPT: Record<string, string[]> = {
+  'text/markdown': ['.md', '.markdown'],
+};
+
+interface DropConfig {
+  accept: Record<string, string[]>;
+  extensions: readonly string[];
+  heading: string;
+  blurb: string;
+}
+
+function dropConfig(target: TargetFormat): DropConfig {
+  if (target === 'markdown') {
+    return {
+      accept: IMPORT_ACCEPT,
+      extensions: ALLOWED_EXTENSIONS,
+      heading: 'Glisse ton premier livre ici',
+      blurb: 'EPUB, PDF, DOCX, HTML, TXT → Markdown',
+    };
+  }
+  return {
+    accept: EXPORT_ACCEPT,
+    extensions: EXPORT_INPUT_EXTENSIONS,
+    heading: 'Glisse ton fichier Markdown ici',
+    blurb: `Markdown (.md) → ${target.toUpperCase()}`,
+  };
+}
+
 export interface DropZoneProps {
   /** Called with the accepted files when the user drops or picks them. */
   onFilesSelected: (files: File[]) => void;
+  /** Output format — flips the accepted input types and the copy. */
+  target: TargetFormat;
   /** Disabled while a job is being submitted. */
   busy?: boolean;
 }
 
-export function DropZone({ onFilesSelected, busy = false }: DropZoneProps) {
+export function DropZone({
+  onFilesSelected,
+  target,
+  busy = false,
+}: DropZoneProps) {
+  const config = dropConfig(target);
+
   const onDrop = useCallback(
     (accepted: File[]) => {
       if (accepted.length === 0) return;
@@ -45,7 +85,7 @@ export function DropZone({ onFilesSelected, busy = false }: DropZoneProps) {
     open,
   } = useDropzone({
     onDrop,
-    accept: ACCEPT,
+    accept: config.accept,
     maxFiles: MAX_FILES_PER_JOB,
     maxSize: MAX_FILE_SIZE_BYTES,
     multiple: true,
@@ -103,10 +143,10 @@ export function DropZone({ onFilesSelected, busy = false }: DropZoneProps) {
           ? 'Format non supporté'
           : isDragActive
           ? 'Relâche pour commencer'
-          : 'Glisse ton premier livre ici'}
+          : config.heading}
       </h2>
       <p className="mt-3 max-w-md text-sm text-[var(--muted-foreground)]">
-        EPUB, PDF, DOCX, HTML, TXT — jusqu’à {MAX_FILES_PER_JOB} fichiers,{' '}
+        {config.blurb} — jusqu’à {MAX_FILES_PER_JOB} fichiers,{' '}
         {Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))} MB max chacun. Ou{' '}
         <span className="font-medium text-[var(--accent)] underline-offset-2 group-hover:underline">
           parcoure ta bibliothèque
@@ -114,7 +154,7 @@ export function DropZone({ onFilesSelected, busy = false }: DropZoneProps) {
         .
       </p>
       <p className="font-mono mt-4 text-[10px] uppercase tracking-widest text-[var(--muted-foreground)]/70">
-        {ALLOWED_EXTENSIONS.join('  ·  ')}
+        {config.extensions.join('  ·  ')}
       </p>
     </motion.div>
   );

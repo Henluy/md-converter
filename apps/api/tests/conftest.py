@@ -314,3 +314,31 @@ def txt_file(tmp_path: Path) -> Path:
     path = tmp_path / "note.txt"
     path.write_text("Hello from a plain text file.\n", encoding="utf-8")
     return path
+
+
+_SAMPLE_MARKDOWN = """\
+# Rapport de test
+
+Un paragraphe avec du **gras**, de l'*italique* et du `code`, plus des
+accents: éàçùî.
+
+## Liste
+
+- élément un
+- élément deux
+
+## Tableau
+
+| Col A | Col B |
+|-------|-------|
+| 1     | un    |
+| 2     | deux  |
+"""
+
+
+@pytest.fixture
+def markdown_file(tmp_path: Path) -> Path:
+    """A small GitHub-flavoured markdown doc — the input for export tests."""
+    path = tmp_path / "rapport.md"
+    path.write_text(_SAMPLE_MARKDOWN, encoding="utf-8")
+    return path

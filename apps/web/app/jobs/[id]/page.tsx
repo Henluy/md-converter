@@ -5,6 +5,7 @@ import {
   BookOpen,
   ChevronRight,
   Download,
+  FileDown,
   FileText,
   Loader2,
 } from 'lucide-react';
@@ -22,7 +23,9 @@ import {
   type FileRead,
   type JobStatus,
   type QualityLevel,
+  type TargetFormat,
 } from '@/lib/api-client';
+import { useFileBlobUrl } from '@/lib/hooks/use-file-blob';
 import { useFileContent } from '@/lib/hooks/use-file-content';
 import { useJob } from '@/lib/hooks/use-job';
 import { formatBytes } from '@/lib/format';
@@ -167,10 +170,20 @@ export default function JobDetailPage() {
 
           <article className="space-y-4">
             {activeFile && <QualityPanel file={activeFile} />}
-            {activeId ? (
-              <FilePreview fileId={activeId} />
+            {activeId && activeFile ? (
+              job.data.target_format === 'markdown' ? (
+                <FilePreview fileId={activeId} />
+              ) : (
+                <ExportPreview
+                  file={activeFile}
+                  target={job.data.target_format}
+                />
+              )
             ) : (
-              <PreviewEmpty status={job.data.status} />
+              <PreviewEmpty
+                status={job.data.status}
+                target={job.data.target_format}
+              />
             )}
           </article>
         </div>
@@ -231,6 +244,61 @@ function FilePreview({ fileId }: { fileId: string }) {
     <MarkdownPreview
       content={content.data ?? ''}
       downloadUrl={fileDownloadUrl(fileId)}
+    />
+  );
+}
+
+function ExportPreview({
+  file,
+  target,
+}: {
+  file: FileRead;
+  target: TargetFormat;
+}) {
+  // Exported documents are binary — no inline markdown. Offer a clear
+  // download card, plus a native inline preview for PDF.
+  const stem = file.original_filename.replace(/\.[^.]+$/, '');
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-4 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)] p-5">
+        <span
+          aria-hidden
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-[var(--radius-md)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-[var(--accent)]"
+        >
+          <FileDown className="h-6 w-6" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-display truncate">
+            {stem}.{target}
+          </p>
+          <p className="text-xs text-[var(--muted-foreground)]">
+            {target.toUpperCase()}
+            {file.size_bytes ? ` · ${formatBytes(file.size_bytes)}` : ''}
+          </p>
+        </div>
+        <a
+          href={fileDownloadUrl(file.id)}
+          download
+          className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] transition-opacity hover:opacity-90"
+        >
+          <Download className="h-4 w-4" />
+          Télécharger
+        </a>
+      </div>
+      {target === 'pdf' && <PdfPreview fileId={file.id} />}
+    </div>
+  );
+}
+
+function PdfPreview({ fileId }: { fileId: string }) {
+  const { url, isError } = useFileBlobUrl(fileId, true);
+  if (isError) return null; // The download card above is still available.
+  if (!url) return <PreviewSkeleton />;
+  return (
+    <iframe
+      title="Aperçu PDF"
+      src={url}
+      className="h-[75vh] w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--card)]"
     />
   );
 }
@@ -334,15 +402,25 @@ function PreviewSkeleton() {
   );
 }
 
-function PreviewEmpty({ status }: { status: JobStatus }) {
+function PreviewEmpty({
+  status,
+  target,
+}: {
+  status: JobStatus;
+  target: TargetFormat;
+}) {
+  const idle =
+    target === 'markdown'
+      ? 'Pas de fichier à prévisualiser.'
+      : 'Pas de fichier à télécharger.';
   const copy =
     status === 'pending'
       ? 'En file d’attente.'
       : status === 'processing'
-      ? 'Conversion en cours, la preview apparaîtra ici.'
+      ? 'Conversion en cours, le résultat apparaîtra ici.'
       : status === 'failed'
       ? 'Aucun fichier n’a pu être converti.'
-      : 'Pas de fichier à prévisualiser.';
+      : idle;
   return (
     <div className="grid place-items-center rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-24 text-center">
       <Loader2

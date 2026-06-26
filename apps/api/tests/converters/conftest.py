@@ -5,10 +5,17 @@ Shared EPUB/output fixtures live in the root tests/conftest.py.
 
 from __future__ import annotations
 
+import shutil
 import textwrap
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture
+def skip_if_no_weasyprint() -> None:
+    if shutil.which("weasyprint") is None:
+        pytest.skip("weasyprint binary not available on this host")
 
 
 @pytest.fixture

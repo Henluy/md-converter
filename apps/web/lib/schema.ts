@@ -32,11 +32,17 @@ export type FileStatus = (typeof FILE_STATUSES)[number];
 export const QUALITY_LEVELS = ['high', 'medium', 'low'] as const;
 export type QualityLevel = (typeof QUALITY_LEVELS)[number];
 
+// Conversion direction. 'markdown' imports a document → markdown (default);
+// the rest export an uploaded markdown file to that format.
+export const TARGET_FORMATS = ['markdown', 'pdf', 'docx', 'epub'] as const;
+export type TargetFormat = (typeof TARGET_FORMATS)[number];
+
 export const jobs = pgTable(
   'jobs',
   {
     id: uuid().primaryKey().defaultRandom(),
     status: text().notNull().default('pending').$type<JobStatus>(),
+    targetFormat: text().notNull().default('markdown').$type<TargetFormat>(),
     createdAt: timestamp({ withTimezone: true }).defaultNow(),
     completedAt: timestamp({ withTimezone: true }),
     errorMessage: text(),
@@ -47,6 +53,10 @@ export const jobs = pgTable(
     check(
       'jobs_status_valid',
       sql`${table.status} in ('pending', 'processing', 'done', 'failed', 'partial_success')`,
+    ),
+    check(
+      'jobs_target_format_valid',
+      sql`${table.targetFormat} in ('markdown', 'pdf', 'docx', 'epub')`,
     ),
     index('jobs_status_idx').on(table.status),
     index('jobs_created_at_idx').on(table.createdAt.desc()),

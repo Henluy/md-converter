@@ -10,6 +10,7 @@ from app.converters.errors import (
     ConverterUnavailableError,
     FormatNotSupportedError,
 )
+from app.converters.export import MarkdownExportConverter, OutputFormat
 from app.converters.markitdown import MarkItDownConverter
 from app.converters.ocr import OcrPdfConverter
 from app.converters.pandoc import PandocConverter
@@ -30,7 +31,9 @@ __all__ = [
     "ConverterUnavailableError",
     "FormatNotSupportedError",
     "MarkItDownConverter",
+    "MarkdownExportConverter",
     "OcrPdfConverter",
+    "OutputFormat",
     "PandocConverter",
     "PymuPdfConverter",
     "RoutingDecision",
@@ -56,4 +59,11 @@ def build_default_registry() -> dict[str, BaseConverter]:
         "ocr": OcrPdfConverter(
             enabled=settings.enable_ocr, language=settings.ocr_language
         ),
+        # Reverse direction: markdown → PDF/DOCX/EPUB. Selected by a job's
+        # target_format, not by input-format routing.
+        "export-pdf": MarkdownExportConverter(
+            OutputFormat.pdf, pdf_engine=settings.export_pdf_engine
+        ),
+        "export-docx": MarkdownExportConverter(OutputFormat.docx),
+        "export-epub": MarkdownExportConverter(OutputFormat.epub),
     }

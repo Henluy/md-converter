@@ -1,0 +1,2 @@
+ALTER TABLE "jobs" ADD COLUMN "target_format" text DEFAULT 'markdown' NOT NULL;--> statement-breakpoint
+ALTER TABLE "jobs" ADD CONSTRAINT "jobs_target_format_valid" CHECK ("jobs"."target_format" in ('markdown', 'pdf', 'docx', 'epub'));

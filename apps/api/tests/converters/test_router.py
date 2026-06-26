@@ -97,4 +97,12 @@ def test_router_rejects_unknown_extension(tmp_path: Path) -> None:
 
 def test_router_exposes_available_converters() -> None:
     router = ConverterRouter(build_default_registry())
-    assert router.available_converters == ["markitdown", "ocr", "pandoc", "pymupdf"]
+    assert router.available_converters == [
+        "export-docx",
+        "export-epub",
+        "export-pdf",
+        "markitdown",
+        "ocr",
+        "pandoc",
+        "pymupdf",
+    ]

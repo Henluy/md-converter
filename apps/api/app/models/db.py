@@ -66,6 +66,10 @@ class JobRow(Base):
             "'partial_success')",
             name="jobs_status_valid",
         ),
+        CheckConstraint(
+            "target_format in ('markdown', 'pdf', 'docx', 'epub')",
+            name="jobs_target_format_valid",
+        ),
         Index("jobs_status_idx", "status"),
         Index("jobs_created_at_idx", text("created_at DESC NULLS LAST")),
     )
@@ -81,6 +85,14 @@ class JobRow(Base):
         nullable=False,
         server_default="pending",
         default="pending",
+    )
+    # Conversion direction: 'markdown' imports a document → markdown (default);
+    # 'pdf'/'docx'/'epub' export an uploaded markdown file to that format.
+    target_format: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        server_default="markdown",
+        default="markdown",
     )
     created_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True),
