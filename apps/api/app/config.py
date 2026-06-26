@@ -52,10 +52,31 @@ class Settings(BaseSettings):
         "text/plain"
     )
 
+    # Markdown is the accepted *input* when exporting (markdown → PDF/DOCX/EPUB).
+    # libmagic sniffs markdown as text/plain, so the MIME set mirrors that.
+    export_input_extensions: str = ".md,.markdown"
+    export_input_mime_types: str = "text/plain,text/markdown,text/x-markdown"
+
     @property
     def allowed_extensions_set(self) -> frozenset[str]:
         return frozenset(
             ext.strip().lower() for ext in self.allowed_extensions.split(",") if ext.strip()
+        )
+
+    @property
+    def export_input_extensions_set(self) -> frozenset[str]:
+        return frozenset(
+            ext.strip().lower()
+            for ext in self.export_input_extensions.split(",")
+            if ext.strip()
+        )
+
+    @property
+    def export_input_mime_types_set(self) -> frozenset[str]:
+        return frozenset(
+            mt.strip().lower()
+            for mt in self.export_input_mime_types.split(",")
+            if mt.strip()
         )
 
     @property
@@ -78,6 +99,9 @@ class Settings(BaseSettings):
     # "OCR is disabled" message instead of being silently dropped.
     enable_ocr: bool = False
     ocr_language: str = "eng"
+    # Engine pandoc uses for markdown → PDF export. WeasyPrint (HTML/CSS) avoids
+    # a multi-GB LaTeX toolchain; swap to a LaTeX engine for heavy math/typography.
+    export_pdf_engine: str = "weasyprint"
 
     # --- Security --------------------------------------------------------
     cors_origins: str = "http://localhost:3000"
