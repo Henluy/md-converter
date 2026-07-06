@@ -14,6 +14,7 @@ by the storage layer (ticket 9).
 
 from __future__ import annotations
 
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -76,6 +77,20 @@ _LENIENT_MIME_EQUIVALENCES: dict[str, frozenset[str]] = {
 _MAGIC = magic.Magic(mime=True)
 _SNIFF_BYTES = 4096
 
+# ZIP-based formats and the entry that authoritatively identifies each. libmagic
+# reads only a buffer and mis-identifies "streaming" ZIPs (data-descriptor local
+# headers, mimetype not stored first) as octet-stream — common in EPUBs from
+# Kobo/Calibre and DOCX from some editors. Reading the central directory (as
+# ``zipfile`` does) is the ground truth, so we use it as a fallback.
+_ZIP_CONTAINER: dict[str, tuple[str, str]] = {
+    # extension: (canonical mime, required entry)
+    ".epub": ("application/epub+zip", "META-INF/container.xml"),
+    ".docx": (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "[Content_Types].xml",
+    ),
+}
+
 
 def _sniff_mime(input_path: Path) -> str:
     """Return the MIME type as detected by libmagic from the first bytes."""
@@ -84,6 +99,26 @@ def _sniff_mime(input_path: Path) -> str:
     if not head:
         return "application/x-empty"
     return _MAGIC.from_buffer(head).lower()
+
+
+def _verify_zip_container(input_path: Path, ext: str) -> str | None:
+    """Structurally confirm a ZIP-based format via its container marker.
+
+    Returns the canonical MIME when the archive really is that format, else
+    ``None``. This is authoritative (reads the ZIP central directory), so it
+    both rescues valid files libmagic mislabels and still rejects a bare ZIP
+    renamed ``.epub`` (no ``META-INF/container.xml`` → not an EPUB).
+    """
+    spec = _ZIP_CONTAINER.get(ext)
+    if spec is None or not zipfile.is_zipfile(input_path):
+        return None
+    canonical, required_entry = spec
+    try:
+        with zipfile.ZipFile(input_path) as archive:
+            names = frozenset(archive.namelist())
+    except (zipfile.BadZipFile, OSError):
+        return None
+    return canonical if required_entry in names else None
 
 
 # ---------------------------------------------------------------------------
@@ -117,10 +152,19 @@ def detect_format(
 
     mime = _sniff_mime(input_path)
     accepted_for_ext = _LENIENT_MIME_EQUIVALENCES.get(ext, frozenset({mime}))
-    if mime not in accepted_for_ext or not (accepted_for_ext & mimes or mime in mimes):
-        raise MimeTypeMismatchError(
-            f"libmagic detected {mime!r} which is incompatible with extension {ext!r}"
-        )
+    mime_ok = mime in accepted_for_ext and (
+        bool(accepted_for_ext & mimes) or mime in mimes
+    )
+    if not mime_ok:
+        # libmagic's buffer sniff is inconclusive (typically octet-stream on a
+        # streaming ZIP). Fall back to the authoritative container check before
+        # rejecting — otherwise valid EPUB/DOCX files get turned away.
+        canonical = _verify_zip_container(input_path, ext)
+        if canonical is None:
+            raise MimeTypeMismatchError(
+                f"libmagic detected {mime!r} which is incompatible with extension {ext!r}"
+            )
+        mime = canonical
 
     size_bytes = input_path.stat().st_size
     return DetectedFormat(extension=ext, mime_type=mime, size_bytes=size_bytes)
