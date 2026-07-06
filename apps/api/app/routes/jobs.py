@@ -174,6 +174,9 @@ async def create_job_route(
                 FileTooLargeError,
                 FileValidationError,
             ) as exc:
+                # Don't leave the streamed-to-disk file behind on rejection.
+                for p in staged_paths:
+                    p.unlink(missing_ok=True)
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     f"{upload.filename}: {exc}",

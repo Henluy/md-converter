@@ -52,6 +52,41 @@ def test_detect_rejects_wrong_magic(tmp_path: Path) -> None:
         detect_format(spoofed)
 
 
+def test_detect_accepts_epub_when_libmagic_says_octet_stream(
+    epub_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Streaming/data-descriptor EPUBs (Kobo, Calibre) make libmagic's buffer
+    sniff return octet-stream even though the archive is a valid EPUB. The
+    structural container check must rescue them."""
+    import app.security.validation as validation
+
+    monkeypatch.setattr(
+        validation, "_sniff_mime", lambda _p: "application/octet-stream"
+    )
+    detected = detect_format(epub_file)
+    assert detected.extension == ".epub"
+    assert detected.mime_type == "application/epub+zip"
+
+
+def test_detect_rejects_octet_stream_zip_without_epub_container(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plain ZIP renamed .epub (no META-INF/container.xml) stays rejected —
+    the structural fallback must not become a spoofing hole."""
+    import zipfile
+
+    import app.security.validation as validation
+
+    bogus = tmp_path / "fake.epub"
+    with zipfile.ZipFile(bogus, "w") as archive:
+        archive.writestr("hello.txt", "not an epub at all")
+    monkeypatch.setattr(
+        validation, "_sniff_mime", lambda _p: "application/octet-stream"
+    )
+    with pytest.raises(MimeTypeMismatchError):
+        detect_format(bogus)
+
+
 def test_detect_rejects_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileValidationError):
         detect_format(tmp_path / "missing.pdf")

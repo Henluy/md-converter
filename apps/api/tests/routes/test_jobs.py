@@ -124,6 +124,27 @@ async def test_post_jobs_rejects_unsupported_extension(
     assert "extension" in response.json()["detail"].lower()
 
 
+@pytest.mark.usefixtures("db_session_sync")
+async def test_rejected_upload_leaves_no_staged_file(
+    client: AsyncClient,
+    override_data_dir: Path,
+    tmp_path: Path,
+) -> None:
+    """A validation failure must not leak the streamed-to-disk file."""
+    spoof = tmp_path / "fake.pdf"
+    spoof.write_bytes(b"definitely not a pdf")
+    with spoof.open("rb") as fh:
+        response = await client.post(
+            "/api/jobs",
+            files={"files": (spoof.name, fh.read(), "application/pdf")},
+        )
+    assert response.status_code == 400
+
+    input_dir = override_data_dir / "input"
+    leftover = list(input_dir.glob("*")) if input_dir.exists() else []
+    assert leftover == [], f"rejected upload leaked staged file(s): {leftover}"
+
+
 @pytest.mark.usefixtures("db_session_sync", "override_data_dir")
 async def test_post_jobs_rejects_spoofed_pdf(
     client: AsyncClient,
