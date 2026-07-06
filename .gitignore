@@ -11,6 +11,9 @@
 !/data/input/.gitkeep
 !/data/output/.gitkeep
 
+# dev.sh runtime logs
+/.dev/
+
 # Node
 node_modules/
 .next/
